@@ -71,6 +71,34 @@ const MA_COLORS = ['#c98a12', '#1f6feb', '#8b5cf6', '#6b7280'];
 const MA_LABELS = ['MA5', 'MA10', 'MA20', 'MA60'] as const;
 const MA_STORE_KEY = 'tv.maVisible';
 
+/** 主图可选指标：均线组与布林带，两者互不排斥 */
+const MAIN_INDICATORS = ['MA', 'BOLL'] as const;
+type MainIndicator = (typeof MAIN_INDICATORS)[number];
+const MAIN_LABELS: Record<MainIndicator, string> = { MA: '均线', BOLL: 'BOLL' };
+const MAIN_STORE_KEY = 'tv.mainInd';
+/** 布林带取洋红/青，和四条均线的金蓝紫灰拉开距离 */
+const BOLL_COLORS = ['#e11d8f', '#0d9488', '#e11d8f'];
+
+type MainVisible = Record<MainIndicator, boolean>;
+
+function loadMainVisible(): MainVisible {
+  const def: MainVisible = { MA: true, BOLL: false };
+  try {
+    const raw = localStorage.getItem(MAIN_STORE_KEY);
+    if (raw) {
+      const o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        for (const k of MAIN_INDICATORS) {
+          if (typeof o[k] === 'boolean') def[k] = o[k];
+        }
+      }
+    }
+  } catch {
+    /* 忽略损坏的本地配置 */
+  }
+  return def;
+}
+
 function loadMaVisible(): boolean[] {
   try {
     const raw = localStorage.getItem(MA_STORE_KEY);
@@ -154,6 +182,10 @@ export default function ChartPane() {
   const indPopRef = useRef<HTMLSpanElement>(null);
   /** 四条均线的显示开关，顺序对应 MA5/10/20/60 */
   const [maVisible, setMaVisible] = useState<boolean[]>(loadMaVisible);
+  /** 主图指标开关（均线 / 布林带） */
+  const [mainInd, setMainInd] = useState<MainVisible>(loadMainVisible);
+  const [mainOpen, setMainOpen] = useState(false);
+  const mainPopRef = useRef<HTMLSpanElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [bars, setBars] = useState<Bar[]>([]);
@@ -180,20 +212,33 @@ export default function ChartPane() {
 
   useEffect(() => {
     try {
+      localStorage.setItem(MAIN_STORE_KEY, JSON.stringify(mainInd));
+    } catch {
+      /* 忽略隐私模式下的写入失败 */
+    }
+  }, [mainInd]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(SUB_STORE_KEY, JSON.stringify(subPanes));
     } catch {
       /* 忽略隐私模式下的写入失败 */
     }
   }, [subPanes]);
 
-  /** 点击面板外或按 Esc 收起折叠面板 */
+  /** 点击面板外或按 Esc 收起折叠面板（主图、副图共用一套收起逻辑） */
+  const anyPopOpen = indOpen || mainOpen;
   useEffect(() => {
-    if (!indOpen) return;
+    if (!anyPopOpen) return;
     const onDown = (e: MouseEvent) => {
-      if (!indPopRef.current?.contains(e.target as Node)) setIndOpen(false);
+      const t = e.target as Node;
+      if (!indPopRef.current?.contains(t)) setIndOpen(false);
+      if (!mainPopRef.current?.contains(t)) setMainOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIndOpen(false);
+      if (e.key !== 'Escape') return;
+      setIndOpen(false);
+      setMainOpen(false);
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -201,7 +246,7 @@ export default function ChartPane() {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [indOpen]);
+  }, [anyPopOpen]);
 
   /** 设置副图个数：减少直接截断，增加时优先补上还没用到的指标 */
   const setSubCount = (n: number) =>
@@ -238,6 +283,9 @@ export default function ChartPane() {
       return prev.map(() => next);
     });
   const maAllOff = !maVisible.some(Boolean);
+
+  /** 主图指标开关（均线组 / 布林带） */
+  const toggleMain = (k: MainIndicator) => setMainInd((prev) => ({ ...prev, [k]: !prev[k] }));
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -475,7 +523,7 @@ export default function ChartPane() {
     if (period === 'minute' && minute) {
       renderMinute(chart, minute);
     } else if (bars.length) {
-      renderKline(chart, bars, ind, period, maVisible);
+      renderKline(chart, bars, ind, { ma: maVisible, boll: !!mainInd.BOLL });
     }
 
     window.setTimeout(() => {
@@ -495,7 +543,7 @@ export default function ChartPane() {
       }
       viewRef.current.key = viewKey;
     }, 0);
-  }, [bars, ind, minute, period, subPanes, selected, maVisible]);
+  }, [bars, ind, minute, period, subPanes, selected, maVisible, mainInd]);
 
   /** 光标所在 bar（无光标时取最后一根），供图例显示 */
   const legend = useMemo(() => {
@@ -516,6 +564,9 @@ export default function ChartPane() {
       ma: s
         ? [at(s.ma5), at(s.ma10), at(s.ma20), at(s.ma60)]
         : [null, null, null, null],
+      boll: s
+        ? [at(s.bollUp), at(s.bollMid), at(s.bollDn)]
+        : [null, null, null],
       sub: s
         ? {
             dif: at(s.macdDif),
@@ -672,8 +723,7 @@ export default function ChartPane() {
     chart: IChartApi,
     list: Bar[],
     indicators: IndicatorSeries | null,
-    periodKey: string,
-    maOn: boolean[],
+    main: { ma: boolean[]; boll: boolean },
   ) {
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: UP,
@@ -724,9 +774,17 @@ export default function ChartPane() {
         return s;
       };
       const maSeries = [indicators.ma5, indicators.ma10, indicators.ma20, indicators.ma60];
-      maSeries.forEach((vals, i) => {
-        if (maOn[i]) line(vals, MA_COLORS[i]);
-      });
+      if (main.ma) {
+        maSeries.forEach((vals, i) => {
+          if (main.ma[i]) line(vals, MA_COLORS[i]);
+        });
+      }
+      if (main.boll) {
+        // 上轨/中轨/下轨：中轨即 20 日均线，故不依赖均线开关单独可显
+        line(indicators.bollUp, BOLL_COLORS[0]);
+        line(indicators.bollMid, BOLL_COLORS[1]);
+        line(indicators.bollDn, BOLL_COLORS[2]);
+      }
     }
 
     const vol = chart.addSeries(
@@ -810,7 +868,8 @@ export default function ChartPane() {
   }
 
   const isMinute = period === 'minute';
-  const showMa = !isMinute && !!legend;
+  const showMa = !isMinute && !!legend && mainInd.MA;
+  const showBoll = !isMinute && !!legend && mainInd.BOLL;
 
   return (
     <div className="chart-col">
@@ -862,12 +921,65 @@ export default function ChartPane() {
         ))}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
           <span
-            className={`period-tab${maAllOff ? '' : ' active'}`}
-            onClick={toggleAllMa}
+            className="period-tab-wrap"
+            ref={mainPopRef}
             style={{ visibility: isMinute ? 'hidden' : 'visible' }}
-            title={maAllOff ? '显示全部均线' : '隐藏全部均线'}
           >
-            均线
+            <span
+              className={`period-tab${mainOpen ? ' active' : ''}`}
+              onClick={() => {
+                setMainOpen((v) => !v);
+                setIndOpen(false);
+              }}
+              title="主图指标设置"
+            >
+              主图
+              <i className="caret">{mainOpen ? '▴' : '▾'}</i>
+            </span>
+            {mainOpen && (
+              <div className="ind-pop ind-pop-main" onMouseDown={(e) => e.stopPropagation()}>
+                <div className="ind-pop-row">
+                  <i>指标</i>
+                  <div className="ind-chips">
+                    {MAIN_INDICATORS.map((k) => (
+                      <button
+                        key={k}
+                        className={mainInd[k] ? 'on' : ''}
+                        onClick={() => toggleMain(k)}
+                        title={`${mainInd[k] ? '隐藏' : '显示'}${MAIN_LABELS[k]}`}
+                      >
+                        {MAIN_LABELS[k]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="ind-pop-row">
+                  <i>周期</i>
+                  <div className="ind-chips">
+                    {MA_LABELS.map((label, i) => (
+                      <button
+                        key={label}
+                        className={maVisible[i] ? 'on' : ''}
+                        disabled={!mainInd.MA}
+                        onClick={() => toggleMa(i)}
+                        title={`${maVisible[i] ? '隐藏' : '显示'} ${label}`}
+                      >
+                        {label.replace('MA', '')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="ind-pop-tip">
+                  {mainInd.MA ? (
+                    <span className="ind-link" onClick={toggleAllMa}>
+                      均线{maAllOff ? '全开' : '全关'}
+                    </span>
+                  ) : (
+                    '主图只留 K 线与成交量'
+                  )}
+                </div>
+              </div>
+            )}
           </span>
           <span
             className="period-tab-wrap"
@@ -876,7 +988,10 @@ export default function ChartPane() {
           >
             <span
               className={`period-tab${indOpen || subPanes.length ? ' active' : ''}`}
-              onClick={() => setIndOpen((v) => !v)}
+              onClick={() => {
+                setIndOpen((v) => !v);
+                setMainOpen(false);
+              }}
               title="副图指标设置"
             >
               指标{subPanes.length ? ` ${subPanes.length}` : ''}
@@ -985,22 +1100,33 @@ export default function ChartPane() {
                 <b className="num">{fmtVolume(legend.b.volume)}</b>
               </span>
             </div>
-            {showMa && (
+            {(showMa || showBoll) && (
               <div className="legend-row legend-ma">
-                {MA_LABELS.map((label, i) => (
-                  <span
-                    key={label}
-                    className={`ma-item${maVisible[i] ? '' : ' off'}`}
-                    style={maVisible[i] ? { color: MA_COLORS[i] } : undefined}
-                    onClick={() => toggleMa(i)}
-                    title={maVisible[i] ? `隐藏 ${label}` : `显示 ${label}`}
-                  >
-                    {label}{' '}
-                    <b className="num">
-                      {maVisible[i] && legend.ma[i] !== null ? fmtNum(legend.ma[i] as number) : '--'}
-                    </b>
-                  </span>
-                ))}
+                {showMa &&
+                  MA_LABELS.map((label, i) => (
+                    <span
+                      key={label}
+                      className={`ma-item${maVisible[i] ? '' : ' off'}`}
+                      style={maVisible[i] ? { color: MA_COLORS[i] } : undefined}
+                      onClick={() => toggleMa(i)}
+                      title={maVisible[i] ? `隐藏 ${label}` : `显示 ${label}`}
+                    >
+                      {label}{' '}
+                      <b className="num">
+                        {maVisible[i] && legend.ma[i] !== null ? fmtNum(legend.ma[i] as number) : '--'}
+                      </b>
+                    </span>
+                  ))}
+                {showBoll && (
+                  <>
+                    <span className="legend-tag">BOLL</span>
+                    {['UP', 'MB', 'DN'].map((tag, i) => (
+                      <span key={tag} style={{ color: BOLL_COLORS[i] }}>
+                        {tag} <b className="num">{fmtNum(legend.boll[i])}</b>
+                      </span>
+                    ))}
+                  </>
+                )}
               </div>
             )}
           </div>

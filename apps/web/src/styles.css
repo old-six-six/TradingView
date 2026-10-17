@@ -379,6 +379,61 @@ button {
   border-color: var(--accent);
 }
 
+/* 主图指标面板：多选小方块，换行排布 */
+.ind-pop-main {
+  width: 216px;
+}
+
+/* 主图面板的标签只需容纳两个字，收紧后让四个周期排成一行 */
+.ind-pop-main .ind-pop-row > i {
+  width: 42px;
+}
+
+.ind-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+}
+
+.ind-chips button {
+  min-width: 26px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1;
+  text-align: center;
+}
+
+.ind-chips button:hover:not(:disabled) {
+  border-color: var(--text-3);
+}
+
+.ind-chips button.on {
+  background: var(--text);
+  border-color: var(--text);
+  color: #fff;
+}
+
+.ind-chips button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.ind-link {
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ind-link:hover {
+  text-decoration: underline;
+}
+
 .ind-pop-empty {
   padding: 2px 0 6px;
   color: var(--text-3);
