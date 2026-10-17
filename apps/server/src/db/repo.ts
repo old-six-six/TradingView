@@ -1,4 +1,5 @@
 import { query, exec, esc, upsertBatch, num } from './sqlite.js';
+import { pinyinInitials, pinyinInitialsAlt } from '../service/pinyin.js';
 import type { Bar, IndicatorSeries, StockInfo } from '../types.js';
 
 export interface WatchItem {
@@ -26,9 +27,12 @@ export async function upsertStocks(stocks: StockInfo[]): Promise<void> {
     esc(s.code),
     esc(s.name),
     esc(s.market),
+    // 名称变了拼音也得跟着变，所以每次都一并写入
+    esc(pinyinInitials(s.name)),
+    pinyinInitialsAlt(s.name) ? esc(pinyinInitialsAlt(s.name)) : 'NULL',
     esc(now),
   ]);
-  await upsertBatch('stock', ['symbol', 'code', 'name', 'market', 'updated_at'], rows);
+  await upsertBatch('stock', ['symbol', 'code', 'name', 'market', 'py', 'py2', 'updated_at'], rows);
 }
 
 export async function getStock(symbol: string): Promise<StockInfo | null> {

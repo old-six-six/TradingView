@@ -168,7 +168,7 @@ export default function TopBar() {
         <input
           ref={inputRef}
           value={kw}
-          placeholder="代码 / 名称，回车添加"
+          placeholder="代码 / 名称 / 拼音首字母"
           onChange={(e) => setKw(e.target.value)}
           onFocus={() => setOpen(true)}
           // 选完票后输入框仍是焦点的，再点一次不会触发 focus，得靠 click 补上

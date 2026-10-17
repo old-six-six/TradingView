@@ -124,12 +124,16 @@ export default function App() {
       }
       // 列表页的上下键交给表格自己滚，不再切自选
       if (useStore.getState().market) return;
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        move(1);
-      } else if (e.key === 'ArrowUp') {
+      // 【 上一只 / 】 下一只（上下键已改给图表做缩放）。
+      // 中文输入法下 e.key 会是全角括号，e.code 仍是 Bracket*，两个都认
+      const up = e.key === '[' || e.key === '【' || e.code === 'BracketLeft';
+      const down = e.key === ']' || e.key === '】' || e.code === 'BracketRight';
+      if (up) {
         e.preventDefault();
         move(-1);
+      } else if (down) {
+        e.preventDefault();
+        move(1);
       }
     };
     window.addEventListener('keydown', onKey);

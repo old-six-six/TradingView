@@ -255,10 +255,27 @@ export async function apiRoutes(app: FastifyInstance) {
     const kw = (q ?? '').trim();
     if (!kw) return { items: [] };
     const safe = kw.replace(/'/g, "''");
+    // 拼音首字母只存了小写，字面量也统一小写；代码/名称保持原样
+    const low = safe.toLowerCase();
+    // 排序按「像不像用户想要的」：代码精确 > 代码前缀 > 名称前缀 > 拼音全等 >
+    // 拼音前缀 > 其余包含匹配。否则打 zg 会被一堆名称含「中国」的票淹没，
+    // 打 byd 也会先撞上白云电器（bydq）而不是比亚迪（byd）
     const rows = await query<{ symbol: string; code: string; name: string }>(
       `SELECT symbol, code, name FROM stock
-       WHERE symbol LIKE '%${safe}%' OR code LIKE '%${safe}%' OR name LIKE '%${safe}%'
-       ORDER BY symbol LIMIT 20`,
+       WHERE code LIKE '%${safe}%' OR name LIKE '%${safe}%'
+          OR py LIKE '%${low}%' OR py2 LIKE '%${low}%'
+       ORDER BY
+         CASE
+           WHEN code = '${safe}' THEN 0
+           WHEN code LIKE '${safe}%' THEN 1
+           WHEN name LIKE '${safe}%' THEN 2
+           WHEN py = '${low}' OR py2 = '${low}' THEN 3
+           WHEN py LIKE '${low}%' OR py2 LIKE '${low}%' THEN 4
+           ELSE 5
+         END,
+         LENGTH(py),
+         symbol
+       LIMIT 20`,
     );
     return { items: rows };
   });

@@ -37,6 +37,9 @@ const BARS_ON_SCREEN: Record<string, number> = {
   month: 120,
 };
 
+/** 图表右侧留白（根），与 timeScale.rightOffset 保持一致 */
+const RIGHT_PAD = 4;
+
 const SUB_INDICATORS = ['MACD', 'KDJ', 'RSI'] as const;
 type SubIndicator = (typeof SUB_INDICATORS)[number];
 /** 副图最多 3 个，正好对应 3 种可选指标 */
@@ -488,10 +491,13 @@ export default function ChartPane() {
   /**
    * 左右方向键挪光标：逐根走，走出视野时把窗口跟着平移一格，
    * 这样一直按住 ← 就能从最新一根一路回看到上市首日。
+   * 上下方向键改做缩放（↑ 放大 / ↓ 缩小），换股交给 【 】。
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const lr = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+      const ud = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+      if (!lr && !ud) return;
       const t = e.target as HTMLElement | null;
       const tag = t?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) return;
@@ -504,6 +510,12 @@ export default function ChartPane() {
       const candle = candleRef.current;
       if (!list.length || !chart || !candle) return;
       e.preventDefault();
+
+      // ↑ 放大 = 视野变窄；每按一次缩放 20%，手感接近滚轮
+      if (ud) {
+        zoomBy(e.key === 'ArrowUp' ? 0.8 : 1 / 0.8);
+        return;
+      }
 
       const ts = chart.timeScale();
       // 还没定位过就从当前视野右端起算，跟「直接按←」的直觉一致。
@@ -524,6 +536,57 @@ export default function ChartPane() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  /**
+   * 以十字光标为中心缩放（没有光标就以视野中心），factor < 1 放大。
+   * 缩完必须重钉一次光标：十字线是按像素记位置的，视野一变就落到隔壁 K 线。
+   */
+  function zoomBy(factor: number) {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const ts = chart.timeScale();
+    const bars = barsRef.current;
+    if (!bars.length) return;
+    // 连按时上一次的窗口还没生效，直接读可见范围会把每次按键都算在同一个基点上
+    //（连按 20 次只缩一步）。优先用排队中的目标范围叠加。
+    const r = pendingRange.current ?? ts.getVisibleLogicalRange();
+    if (!r) return;
+
+    const w = r.to - r.from;
+    // 缩到 15 根就停，再细只剩影线看不出形态；放大上限是全部历史 + 右侧留白
+    const lo = 0;
+    const hi = bars.length - 1 + RIGHT_PAD;
+    const nw = Math.max(15, Math.min(hi - lo, w * factor));
+    if (Math.abs(nw - w) < 0.01) return;
+
+    const i = xhairOn.current ? xhairRef.current : null;
+    const center = i ?? (r.from + r.to) / 2;
+    let from = center - nw / 2;
+    let to = center + nw / 2;
+    // 撞到数据边界时整段回推、宽度不变。交给图表钳边会顺手把宽度也改掉，
+    // 那样连按的手感就不是等比缩放了
+    if (from < lo) {
+      from = lo;
+      to = lo + nw;
+    }
+    if (to > hi) {
+      to = hi;
+      from = hi - nw;
+    }
+
+    const nr = { from, to };
+    pendingRange.current = nr;
+    // 抑制十字线回调：改范围的一瞬间图表会按像素重算光标并回调隔壁那根，
+    // 采信之后光标会莫名其妙挪一根
+    progUntil.current = performance.now() + 200;
+    ts.setVisibleLogicalRange(nr);
+    if (i !== null) {
+      if (followRaf.current) cancelAnimationFrame(followRaf.current);
+      followRaf.current = requestAnimationFrame(() => placeCrosshair(0));
+    } else {
+      pendingRange.current = null;
+    }
+  }
 
   /**
    * 把十字光标钉到 xhairRef 指向的那根 K 线上。
@@ -649,6 +712,7 @@ export default function ChartPane() {
     // 换票/换周期后旧的 K 线索引已经没意义
     xhairRef.current = null;
     xhairOn.current = false;
+    pendingRange.current = null;
 
     const load = async () => {
       try {
@@ -1530,7 +1594,7 @@ export default function ChartPane() {
         >
           {sidebar ? '◀ 自选' : '▶ 自选'}
         </span>
-        <span className="foot-hint">← → 移动光标</span>
+        <span className="foot-hint">← → 移动光标　↑ ↓ 缩放　【 】换股</span>
         <span style={{ marginLeft: 'auto' }}>
           {legend ? (legend.hovered ? `光标 ${legend.b.date}` : `最新 ${lastDate}`) : lastDate}
         </span>

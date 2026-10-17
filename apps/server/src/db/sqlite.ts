@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DB_PATH } from '../config.js';
+import { pinyinInitials, pinyinInitialsAlt } from '../service/pinyin.js';
 
 let dbc: DatabaseSync | null = null;
 
@@ -11,6 +12,9 @@ CREATE TABLE IF NOT EXISTS stock (
   code TEXT,
   name TEXT,
   market TEXT,
+  -- 名称的拼音首字母（zcfw = 中船防务），py2 是多音字的备选串
+  py TEXT,
+  py2 TEXT,
   updated_at TEXT
 );
 
@@ -145,6 +149,30 @@ function migrate(): void {
   const have = new Set(cols.map((c) => String(c.name)));
   if (!have.has('bars_at')) dbc.exec('ALTER TABLE board ADD COLUMN bars_at TEXT');
   if (!have.has('bars_count')) dbc.exec('ALTER TABLE board ADD COLUMN bars_count INTEGER');
+
+  const stockCols = dbc.prepare('PRAGMA table_info(stock)').all() as Array<{ name: string }>;
+  const stockHave = new Set(stockCols.map((c) => String(c.name)));
+  if (!stockHave.has('py')) dbc.exec('ALTER TABLE stock ADD COLUMN py TEXT');
+  if (!stockHave.has('py2')) dbc.exec('ALTER TABLE stock ADD COLUMN py2 TEXT');
+  backfillPinyin();
+}
+
+/** 给还没有拼音首字母的老记录补上（只有首次升级或同步前会有活儿） */
+function backfillPinyin(): void {
+  if (!dbc) return;
+  const rows = dbc
+    .prepare("SELECT symbol, name FROM stock WHERE py IS NULL OR py = ''")
+    .all() as Array<{ symbol: string; name: string }>;
+  if (!rows.length) return;
+  const up = dbc.prepare('UPDATE stock SET py = ?, py2 = ? WHERE symbol = ?');
+  dbc.exec('BEGIN');
+  try {
+    for (const r of rows) up.run(pinyinInitials(r.name), pinyinInitialsAlt(r.name) || null, r.symbol);
+    dbc.exec('COMMIT');
+  } catch (e) {
+    dbc.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 export function raw(): DatabaseSync {
