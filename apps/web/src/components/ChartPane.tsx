@@ -38,6 +38,29 @@ const BARS_ON_SCREEN: Record<string, number> = {
 
 const SUB_INDICATORS = ['MACD', 'KDJ', 'RSI'] as const;
 type SubIndicator = (typeof SUB_INDICATORS)[number];
+/** 副图最多 3 个，正好对应 3 种可选指标 */
+const MAX_SUB_PANES = SUB_INDICATORS.length;
+const SUB_STORE_KEY = 'tv.subPanes';
+
+/** 读取副图配置：数组长度即副图个数，空数组表示不显示副图 */
+function loadSubPanes(): SubIndicator[] {
+  try {
+    const raw = localStorage.getItem(SUB_STORE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (
+        Array.isArray(arr) &&
+        arr.length <= MAX_SUB_PANES &&
+        arr.every((x) => SUB_INDICATORS.includes(x))
+      ) {
+        return arr as SubIndicator[];
+      }
+    }
+  } catch {
+    /* 忽略损坏的本地配置 */
+  }
+  return ['MACD'];
+}
 
 const UP = '#d93026';
 const DOWN = '#12894f';
@@ -125,7 +148,10 @@ export default function ChartPane() {
     range: null,
   });
 
-  const [sub, setSub] = useState<SubIndicator>('MACD');
+  /** 副图指标列表：索引即副图序号，长度即副图个数 */
+  const [subPanes, setSubPanes] = useState<SubIndicator[]>(loadSubPanes);
+  const [indOpen, setIndOpen] = useState(false);
+  const indPopRef = useRef<HTMLSpanElement>(null);
   /** 四条均线的显示开关，顺序对应 MA5/10/20/60 */
   const [maVisible, setMaVisible] = useState<boolean[]>(loadMaVisible);
   const [loading, setLoading] = useState(false);
@@ -137,6 +163,9 @@ export default function ChartPane() {
   );
   const [lastDate, setLastDate] = useState('');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [paneTops, setPaneTops] = useState<number[]>([]);
+  const paneRoRef = useRef<ResizeObserver | null>(null);
+  const observedElsRef = useRef<Array<HTMLElement | null>>([]);
 
   const q = quotes[selected];
   const name = q?.name || items.find((i) => i.symbol === selected)?.name || '';
@@ -148,6 +177,56 @@ export default function ChartPane() {
       /* 忽略隐私模式下的写入失败 */
     }
   }, [maVisible]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SUB_STORE_KEY, JSON.stringify(subPanes));
+    } catch {
+      /* 忽略隐私模式下的写入失败 */
+    }
+  }, [subPanes]);
+
+  /** 点击面板外或按 Esc 收起折叠面板 */
+  useEffect(() => {
+    if (!indOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!indPopRef.current?.contains(e.target as Node)) setIndOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIndOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [indOpen]);
+
+  /** 设置副图个数：减少直接截断，增加时优先补上还没用到的指标 */
+  const setSubCount = (n: number) =>
+    setSubPanes((prev) => {
+      const want = Math.max(0, Math.min(MAX_SUB_PANES, n));
+      if (want === prev.length) return prev;
+      if (want < prev.length) return prev.slice(0, want);
+      const next = [...prev];
+      for (const k of SUB_INDICATORS) {
+        if (next.length >= want) break;
+        if (!next.includes(k)) next.push(k);
+      }
+      return next;
+    });
+
+  /** 指定副图换成某个指标；若该指标已在别的副图，则两者对调，避免重复 */
+  const setPaneAt = (i: number, key: SubIndicator) =>
+    setSubPanes((prev) => {
+      if (prev[i] === key) return prev;
+      const j = prev.indexOf(key);
+      const next = [...prev];
+      if (j >= 0) next[j] = prev[i];
+      next[i] = key;
+      return next;
+    });
 
   /** 单条均线开关 */
   const toggleMa = (i: number) =>
@@ -235,12 +314,21 @@ export default function ChartPane() {
           height: hostRef.current.clientHeight,
         });
         layoutPanes();
+        requestAnimationFrame(measurePaneTops);
       }
     });
     ro.observe(hostRef.current);
 
+    // 拖动窗格分隔条时高度会变，副图图例要跟着走
+    paneRoRef.current = new ResizeObserver(() => {
+      requestAnimationFrame(measurePaneTops);
+    });
+
     return () => {
       ro.disconnect();
+      paneRoRef.current?.disconnect();
+      paneRoRef.current = null;
+      observedElsRef.current = [];
       chart.remove();
       chartRef.current = null;
     };
@@ -250,7 +338,15 @@ export default function ChartPane() {
     const chart = chartRef.current;
     if (!chart) return;
     const panes = chart.panes();
-    const factors = panes.length >= 3 ? [0.56, 0.16, 0.28] : [0.74, 0.26];
+    // 窗格数由数据决定：主图 + 成交量 + N 个副图，故不能依赖渲染闭包里的 subPanes
+    const subCount = Math.max(0, panes.length - 2);
+    // 副图越多，主图让一点空间，但保证副图至少留出能看清形态的高度
+    const main = subCount >= 3 ? 0.48 : subCount === 2 ? 0.52 : 0.55;
+    const vol = 0.14;
+    const factors =
+      panes.length <= 2
+        ? [0.74, 0.26]
+        : [main, vol, ...Array.from({ length: subCount }, () => (1 - main - vol) / subCount)];
     panes.forEach((p, i) => {
       try {
         p.setStretchFactor(factors[i] ?? 0.2);
@@ -258,6 +354,35 @@ export default function ChartPane() {
         /* 版本不支持则用默认分配 */
       }
     });
+  }
+
+  /** 各窗格顶部相对图表容器的偏移，用于把副图图例摆到自己的窗格里 */
+  function measurePaneTops() {
+    const chart = chartRef.current;
+    const host = hostRef.current;
+    if (!chart || !host) return;
+    const hostTop = host.getBoundingClientRect().top;
+    const panes = chart.panes();
+    const tops = panes.map((p) => {
+      const el = p.getHTMLElement();
+      return el ? Math.max(0, Math.round(el.getBoundingClientRect().top - hostTop)) : 0;
+    });
+    setPaneTops((prev) =>
+      prev.length === tops.length && prev.every((v, i) => v === tops[i]) ? prev : tops,
+    );
+    // 窗格元素变了才重挂监听：observe 会立即回调一次，反复重挂会形成死循环
+    const ro = paneRoRef.current;
+    const els = panes.map((p) => p.getHTMLElement());
+    const changed =
+      els.length !== observedElsRef.current.length ||
+      els.some((el, i) => el !== observedElsRef.current[i]);
+    if (ro && changed) {
+      ro.disconnect();
+      els.forEach((el) => {
+        if (el) ro.observe(el);
+      });
+      observedElsRef.current = els;
+    }
   }
 
   function clearSeries() {
@@ -355,6 +480,7 @@ export default function ChartPane() {
 
     window.setTimeout(() => {
       layoutPanes();
+      requestAnimationFrame(measurePaneTops);
       if (period === 'minute') {
         chart.timeScale().fitContent();
       } else {
@@ -369,7 +495,7 @@ export default function ChartPane() {
       }
       viewRef.current.key = viewKey;
     }, 0);
-  }, [bars, ind, minute, period, sub, selected, maVisible]);
+  }, [bars, ind, minute, period, subPanes, selected, maVisible]);
 
   /** 光标所在 bar（无光标时取最后一根），供图例显示 */
   const legend = useMemo(() => {
@@ -617,11 +743,20 @@ export default function ChartPane() {
     );
     seriesRef.current.push(vol);
 
-    if (indicators) renderSub(chart, indicators, list);
+    if (indicators) {
+      // 每个副图一个独立窗格：主图 0、成交量 1、副图从 2 起
+      subPanes.forEach((key, i) => renderSub(chart, indicators, list, 2 + i, key));
+    }
   }
 
-  function renderSub(chart: IChartApi, s: IndicatorSeries, list: Bar[]) {
-    const mk = (values: number[], color: string, extra: Record<string, unknown> = {}) => {
+  function renderSub(
+    chart: IChartApi,
+    s: IndicatorSeries,
+    list: Bar[],
+    paneIndex: number,
+    kind: SubIndicator,
+  ) {
+    const mk = (values: number[], color: string) => {
       const ser = chart.addSeries(
         LineSeries,
         {
@@ -630,9 +765,8 @@ export default function ChartPane() {
           priceLineVisible: false,
           lastValueVisible: false,
           crosshairMarkerVisible: false,
-          ...extra,
         },
-        2,
+        paneIndex,
       );
       const pts: Array<{ time: UTCTimestamp; value: number }> = [];
       for (let i = 0; i < values.length && i < list.length; i++) {
@@ -645,11 +779,11 @@ export default function ChartPane() {
       return ser;
     };
 
-    if (sub === 'MACD') {
+    if (kind === 'MACD') {
       const hist = chart.addSeries(
         HistogramSeries,
         { priceLineVisible: false, lastValueVisible: false },
-        2,
+        paneIndex,
       );
       const pts: Array<{ time: UTCTimestamp; value: number; color: string }> = [];
       for (let i = 0; i < s.macdHist.length && i < list.length; i++) {
@@ -665,7 +799,7 @@ export default function ChartPane() {
       seriesRef.current.push(hist);
       mk(s.macdDif, MA_COLORS[0]);
       mk(s.macdDea, MA_COLORS[1]);
-    } else if (sub === 'KDJ') {
+    } else if (kind === 'KDJ') {
       mk(s.kdjK, MA_COLORS[0]);
       mk(s.kdjD, MA_COLORS[1]);
       mk(s.kdjJ, MA_COLORS[2]);
@@ -735,16 +869,57 @@ export default function ChartPane() {
           >
             均线
           </span>
-          {SUB_INDICATORS.map((s) => (
+          <span
+            className="period-tab-wrap"
+            ref={indPopRef}
+            style={{ visibility: isMinute ? 'hidden' : 'visible' }}
+          >
             <span
-              key={s}
-              className={`period-tab${sub === s ? ' active' : ''}`}
-              onClick={() => setSub(s)}
-              style={{ visibility: isMinute ? 'hidden' : 'visible' }}
+              className={`period-tab${indOpen || subPanes.length ? ' active' : ''}`}
+              onClick={() => setIndOpen((v) => !v)}
+              title="副图指标设置"
             >
-              {s}
+              指标{subPanes.length ? ` ${subPanes.length}` : ''}
+              <i className="caret">{indOpen ? '▴' : '▾'}</i>
             </span>
-          ))}
+            {indOpen && (
+              <div className="ind-pop" onMouseDown={(e) => e.stopPropagation()}>
+                <div className="ind-pop-row">
+                  <i>副图数量</i>
+                  <div className="ind-counts">
+                    {[0, 1, 2, 3].map((n) => (
+                      <button
+                        key={n}
+                        className={n === subPanes.length ? 'on' : ''}
+                        onClick={() => setSubCount(n)}
+                        title={n === 0 ? '只显示 K 线与成交量' : `${n} 个副图`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {subPanes.map((key, i) => (
+                  <div className="ind-pop-row" key={i}>
+                    <i>副图 {i + 1}</i>
+                    <select
+                      className="ind-select"
+                      value={key}
+                      onChange={(e) => setPaneAt(i, e.target.value as SubIndicator)}
+                    >
+                      {SUB_INDICATORS.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+                {subPanes.length === 0 && <div className="ind-pop-empty">已关闭，只显示 K 线与成交量</div>}
+                <div className="ind-pop-tip">选到其他副图在用的指标会两者对调</div>
+              </div>
+            )}
+          </span>
         </span>
       </div>
 
@@ -828,48 +1003,59 @@ export default function ChartPane() {
                 ))}
               </div>
             )}
-            {!isMinute && legend.sub && (
+          </div>
+        )}
+
+        {/* 副图图例各贴在自己的窗格顶部，避免堆在主图上挡住 K 线 */}
+        {!isMinute &&
+          legend?.sub &&
+          subPanes.map((key, i) => (
+            <div
+              className="chart-legend chart-legend-sub"
+              key={key + i}
+              style={{ top: (paneTops[2 + i] ?? 4) + 3 }}
+            >
               <div className="legend-row legend-ma">
-                {sub === 'MACD' && (
+                <span className="legend-tag">{key}</span>
+                {key === 'MACD' && (
                   <>
                     <span style={{ color: MA_COLORS[0] }}>
-                      DIF <b className="num">{fmtNum(legend.sub.dif)}</b>
+                      DIF <b className="num">{fmtNum(legend.sub!.dif)}</b>
                     </span>
                     <span style={{ color: MA_COLORS[1] }}>
-                      DEA <b className="num">{fmtNum(legend.sub.dea)}</b>
+                      DEA <b className="num">{fmtNum(legend.sub!.dea)}</b>
                     </span>
-                    <span style={{ color: (legend.sub.hist ?? 0) >= 0 ? UP : DOWN }}>
-                      MACD <b className="num">{fmtNum(legend.sub.hist)}</b>
+                    <span style={{ color: (legend.sub!.hist ?? 0) >= 0 ? UP : DOWN }}>
+                      MACD <b className="num">{fmtNum(legend.sub!.hist)}</b>
                     </span>
                   </>
                 )}
-                {sub === 'KDJ' && (
+                {key === 'KDJ' && (
                   <>
                     <span style={{ color: MA_COLORS[0] }}>
-                      K <b className="num">{fmtNum(legend.sub.k)}</b>
+                      K <b className="num">{fmtNum(legend.sub!.k)}</b>
                     </span>
                     <span style={{ color: MA_COLORS[1] }}>
-                      D <b className="num">{fmtNum(legend.sub.d)}</b>
+                      D <b className="num">{fmtNum(legend.sub!.d)}</b>
                     </span>
                     <span style={{ color: MA_COLORS[2] }}>
-                      J <b className="num">{fmtNum(legend.sub.j)}</b>
+                      J <b className="num">{fmtNum(legend.sub!.j)}</b>
                     </span>
                   </>
                 )}
-                {sub === 'RSI' && (
+                {key === 'RSI' && (
                   <>
                     <span style={{ color: MA_COLORS[0] }}>
-                      RSI6 <b className="num">{fmtNum(legend.sub.r6)}</b>
+                      RSI6 <b className="num">{fmtNum(legend.sub!.r6)}</b>
                     </span>
                     <span style={{ color: MA_COLORS[1] }}>
-                      RSI12 <b className="num">{fmtNum(legend.sub.r12)}</b>
+                      RSI12 <b className="num">{fmtNum(legend.sub!.r12)}</b>
                     </span>
                   </>
                 )}
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          ))}
       </div>
 
       <div
