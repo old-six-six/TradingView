@@ -139,6 +139,10 @@ export default function ChartPane() {
         timeVisible: false,
         rightOffset: 4,
         barSpacing: 8,
+        // 两侧都钳住数据边界：拖出空白区后滚轮缩放的锚点下没有 K 线，
+        // 缩放会静默失效。fixLeftEdge 让第一根贴左，fixRightEdge 让最新一根贴右
+        fixLeftEdge: true,
+        fixRightEdge: true,
         tickMarkFormatter: makeTickFormatter(),
       },
       crosshair: {
