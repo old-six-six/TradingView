@@ -15,6 +15,7 @@ import { apiRoutes } from './routes/api.js';
 import { setupWs } from './routes/ws.js';
 import { setWatchProvider, startPoller } from './service/poller.js';
 import { syncMany } from './service/sync.js';
+import { ensureBoardIndex } from './service/boardSync.js';
 import { fetchStocks, fetchAllMarket } from './sources/sina.js';
 import { toSymbol } from './sources/tencent.js';
 
@@ -97,6 +98,9 @@ async function bootstrap() {
       console.error('[bootstrap] 日 K 同步失败', (e as Error).message);
     }
   })();
+
+  // 板块反向索引：超过 12 小时才重建，首次约 3–5 分钟，后台跑不挡启动
+  void ensureBoardIndex();
 }
 
 main().catch((e) => {

@@ -81,6 +81,35 @@ CREATE TABLE IF NOT EXISTS setting (
   k TEXT PRIMARY KEY,
   v TEXT
 );
+
+CREATE TABLE IF NOT EXISTS board (
+  code TEXT PRIMARY KEY,
+  name TEXT,
+  kind TEXT,
+  change_pct REAL,
+  up_count INTEGER,
+  down_count INTEGER,
+  updated_at TEXT,
+  bars_at TEXT,
+  bars_count INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_board_name ON board(name);
+
+-- 板块指数（由成分股市值加权合成），按 board_code 缓存
+CREATE TABLE IF NOT EXISTS board_bar (
+  board_code TEXT NOT NULL,
+  date TEXT NOT NULL,
+  open REAL, high REAL, low REAL, close REAL, volume REAL,
+  PRIMARY KEY (board_code, date)
+);
+
+-- 板块 ↔ 个股 的反向索引，用于回答「这只票属于哪些板块」
+CREATE TABLE IF NOT EXISTS board_member (
+  board_code TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  PRIMARY KEY (board_code, symbol)
+);
+CREATE INDEX IF NOT EXISTS idx_board_member_symbol ON board_member(symbol);
 `;
 
 export async function initDb(): Promise<void> {
@@ -93,6 +122,16 @@ export async function initDb(): Promise<void> {
   dbc.exec('PRAGMA synchronous = OFF');
   dbc.exec('PRAGMA foreign_keys = ON');
   dbc.exec(SCHEMA);
+  migrate();
+}
+
+/** 轻量迁移：老库里缺的列在这里补上（SQLite 的 CREATE TABLE IF NOT EXISTS 不加列） */
+function migrate(): void {
+  if (!dbc) return;
+  const cols = dbc.prepare('PRAGMA table_info(board)').all() as Array<{ name: string }>;
+  const have = new Set(cols.map((c) => String(c.name)));
+  if (!have.has('bars_at')) dbc.exec('ALTER TABLE board ADD COLUMN bars_at TEXT');
+  if (!have.has('bars_count')) dbc.exec('ALTER TABLE board ADD COLUMN bars_count INTEGER');
 }
 
 export function raw(): DatabaseSync {

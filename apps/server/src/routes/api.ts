@@ -18,7 +18,19 @@ import {
 import { aggregateMinute } from '../engine/minute-agg.js';
 import { calcIndicators } from '../engine/indicator.js';
 import { lastSnapshot, setDetail, isTradingTime } from '../service/poller.js';
-import { query } from '../db/sqlite.js';
+import { query, esc } from '../db/sqlite.js';
+import {
+  fetchBoardStocks,
+  fetchBoardQuotes,
+  type BoardKind,
+} from '../sources/tencentBoard.js';
+import { boardBars } from '../service/boardIndex.js';
+import {
+  boardsOfStock,
+  ensureBoardIndex,
+  boardIndexCount,
+  boardSyncState,
+} from '../service/boardSync.js';
 import { MAX_BARS, FULL_HISTORY } from '../config.js';
 import type { IndicatorSeries, Bar } from '../types.js';
 
@@ -255,6 +267,96 @@ export async function apiRoutes(app: FastifyInstance) {
     setDetail(b?.symbol ? toSymbol(b.symbol) : null);
     return { ok: true };
   });
+
+  /**
+   * 某只票所属的板块与概念。
+   * 关系来自 board_member 反向索引，涨跌幅现拉腾讯实时覆盖（索引里的只是快照）。
+   */
+  app.get('/api/stock/boards', async (req) => {
+    const { symbol } = req.query as { symbol?: string };
+    const sym = toSymbol(symbol ?? '');
+    if (!/^(sh|sz|bj)\d{6}$/.test(sym)) return { symbol: sym, boards: [], ready: false };
+
+    const count = await boardIndexCount();
+    if (!count) {
+      // 索引还没建好：踢一次后台任务，先回空让前端显示「构建中」
+      void ensureBoardIndex();
+      return { symbol: sym, boards: [], ready: false, sync: boardSyncState() };
+    }
+
+    const boards = await boardsOfStock(sym);
+    let live: Awaited<ReturnType<typeof fetchBoardQuotes>> = [];
+    try {
+      live = await fetchBoardQuotes(boards.map((b) => b.code));
+    } catch {
+      /* 实时失败就用索引里的快照 */
+    }
+    const map = new Map(live.map((q) => [q.code, q]));
+    return {
+      symbol: sym,
+      ready: true,
+      sync: boardSyncState(),
+      boards: boards.map((b) => {
+        const q = map.get(b.code);
+        return {
+          ...b,
+          name: q?.name || b.name,
+          changePct: q ? q.changePct : b.changePct,
+          price: q?.price ?? 0,
+        };
+      }),
+    };
+  });
+
+  /** 板块 K 线。历史由成分股加权合成，详见 service/boardIndex.ts */
+  app.get('/api/board/kline', async (req) => {
+    const { code, period = 'day', limit = '400' } = req.query as Record<string, string>;
+    const c = String(code ?? '').trim();
+    if (!/^pt[0-9A-Za-z]+$/.test(c)) return { code: c, bars: [], series: null };
+    const p = (['day', 'week', 'month'].includes(period) ? period : 'day') as
+      | 'day'
+      | 'week'
+      | 'month';
+    const n = Math.min(640, Math.max(20, Number(limit) || 400));
+    const info = await boardMeta(c);
+    const kind = (info.kind || 'gn') as BoardKind;
+    const { bars: daily, cached } = await boardBars(c, kind, n);
+    // 周/月由日线合并，避免为每种周期重复合成
+    const bars = p === 'day' ? daily : resample(daily, p);
+    return {
+      code: c,
+      name: info.name,
+      kind,
+      period: p,
+      cached,
+      bars,
+      series: bars.length > 1 ? calcIndicators(bars) : null,
+    };
+  });
+
+  /** 板块成分股，接口已按涨幅降序返回 */
+  app.get('/api/board/stocks', async (req) => {
+    const { code, kind } = req.query as Record<string, string>;
+    const c = String(code ?? '').trim();
+    if (!/^pt[0-9A-Za-z]+$/.test(c)) return { code: c, items: [] };
+    const info = await boardMeta(c);
+    const k = (['gn', 'hy', 'dy'].includes(kind) ? kind : info.kind || 'gn') as BoardKind;
+    const items = await fetchBoardStocks(c, k, 800);
+    return { code: c, name: info.name, kind: k, items };
+  });
+}
+
+/** 板块的名称与类型，兜底从索引表查 */
+async function boardMeta(code: string): Promise<{ name: string; kind: BoardKind | '' }> {
+  const rows = await query<{ name: string; kind: string }>(
+    `SELECT name, kind FROM board WHERE code = ${esc(code)} LIMIT 1`,
+  );
+  const row = rows[0];
+  const kind = row?.kind;
+  return {
+    name: row?.name ?? code,
+    kind: kind === 'gn' || kind === 'hy' || kind === 'dy' ? kind : '',
+  };
 }
 
 async function prevCloseOf(symbol: string): Promise<number> {
@@ -281,8 +383,38 @@ async function fetchFullOrFallback(
   return fetchKline(symbol, period, n > 0 ? n : 640);
 }
 
-function toSeries(rows: Record<string, unknown>[]): IndicatorSeries {
-  const n = (v: unknown) => {
+/** 日线合并成周/月线：首日开、末日收、最高最低取极值、量累加 */
+function resample(bars: Bar[], period: 'week' | 'month'): Bar[] {
+  const keyOf = (d: string) => {
+    if (period === 'month') return d.slice(0, 7);
+    const [y, m, dd] = d.split('-').map(Number);
+    const t = new Date(Date.UTC(y, m - 1, dd));
+    const wd = t.getUTCDay() || 7; // 周一=1 … 周日=7
+    t.setUTCDate(t.getUTCDate() - (wd - 1));
+    return t.toISOString().slice(0, 10);
+  };
+  const out: Bar[] = [];
+  let key = '';
+  let cur: Bar | null = null;
+  for (const b of bars) {
+    const k = keyOf(b.date);
+    if (k !== key) {
+      if (cur) out.push(cur);
+      cur = { ...b };
+      key = k;
+    } else if (cur) {
+      cur.high = Math.max(cur.high, b.high);
+      cur.low = Math.min(cur.low, b.low);
+      cur.close = b.close;
+      cur.volume += b.volume;
+      cur.date = b.date;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+function toSeries(rows: Record<string, unknown>[]): IndicatorSeries {  const n = (v: unknown) => {
     const x = Number(v);
     return v === null || v === undefined || !Number.isFinite(x) ? NaN : x;
   };

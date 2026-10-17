@@ -76,6 +76,35 @@ export interface WatchItem {
   quote?: Quote | null;
 }
 
+/** 板块类型：行业 / 概念 / 地域 */
+export type BoardKind = 'hy' | 'gn' | 'dy';
+
+export interface StockBoard {
+  code: string;
+  name: string;
+  kind: BoardKind;
+  changePct: number;
+  price: number;
+}
+
+export interface BoardStock {
+  symbol: string;
+  code: string;
+  name: string;
+  price: number;
+  change: number;
+  changePct: number;
+  volume: number;
+  amount: number;
+  turnoverRate: number;
+  volumeRatio: number;
+  amplitude: number;
+  marketCap: number;
+  floatCap: number;
+  pe: number | null;
+  pb: number | null;
+}
+
 const BASE = '';
 
 async function get<T>(url: string): Promise<T> {
@@ -124,4 +153,24 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol }),
     }).then((r) => r.json()),
+  stockBoards: (symbol: string) =>
+    get<{
+      symbol: string;
+      ready: boolean;
+      boards: StockBoard[];
+      sync?: { running: boolean; done: number; total: number };
+    }>(`/api/stock/boards?symbol=${symbol}`),
+  boardKline: (code: string, period = 'day', limit = 400) =>
+    get<{
+      code: string;
+      name: string;
+      kind: BoardKind;
+      period: string;
+      bars: Bar[];
+      series: IndicatorSeries | null;
+    }>(`/api/board/kline?code=${code}&period=${period}&limit=${limit}`),
+  boardStocks: (code: string, kind?: BoardKind) =>
+    get<{ code: string; name: string; kind: BoardKind; items: BoardStock[] }>(
+      `/api/board/stocks?code=${code}${kind ? `&kind=${kind}` : ''}`,
+    ),
 };

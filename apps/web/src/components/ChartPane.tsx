@@ -10,9 +10,10 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import { api, type Bar, type IndicatorSeries, type MinutePoint } from '../api';
+import { api, type Bar, type BoardKind, type IndicatorSeries, type MinutePoint, type StockBoard } from '../api';
 import { useStore } from '../store';
 import { cls, fmtAmount, fmtNum, fmtPct, fmtVolume } from '../fmt';
+import BoardModal, { type BoardRef } from './BoardModal';
 
 const PERIODS: Array<{ key: string; label: string }> = [
   { key: 'minute', label: '分时' },
@@ -195,12 +196,66 @@ export default function ChartPane() {
   );
   const [lastDate, setLastDate] = useState('');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  /** 该股所属板块；ready=false 表示服务端索引还在建 */
+  const [boards, setBoards] = useState<StockBoard[]>([]);
+  const [boardReady, setBoardReady] = useState(true);
+  const [boardSync, setBoardSync] = useState<{ running: boolean; done: number; total: number } | null>(
+    null,
+  );
+  const [boardExpanded, setBoardExpanded] = useState(false);
+  const [activeBoard, setActiveBoard] = useState<BoardRef | null>(null);
   const [paneTops, setPaneTops] = useState<number[]>([]);
   const paneRoRef = useRef<ResizeObserver | null>(null);
   const observedElsRef = useRef<Array<HTMLElement | null>>([]);
 
   const q = quotes[selected];
   const name = q?.name || items.find((i) => i.symbol === selected)?.name || '';
+
+  useEffect(() => {
+    if (!selected) {
+      setBoards([]);
+      return;
+    }
+    let alive = true;
+    setBoards([]);
+    setBoardExpanded(false);
+    api
+      .stockBoards(selected)
+      .then((r) => {
+        if (!alive) return;
+        setBoards(r.boards);
+        setBoardReady(r.ready);
+        setBoardSync(r.sync ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [selected]);
+
+  /** 服务端板块索引还在建时，隔几秒补拉一次，建好自动出结果 */
+  useEffect(() => {
+    if (boardReady || !selected) return;
+    const t = window.setInterval(() => {
+      api
+        .stockBoards(selected)
+        .then((r) => {
+          setBoards(r.boards);
+          setBoardReady(r.ready);
+          setBoardSync(r.sync ?? null);
+        })
+        .catch(() => undefined);
+    }, 8000);
+    return () => window.clearInterval(t);
+  }, [boardReady, selected]);
+
+  const industryBoards = boards.filter((b) => b.kind === 'hy');
+  /** 概念在前、地域板块垫后，符合同花顺的阅读顺序 */
+  const themeBoards = boards
+    .filter((b) => b.kind !== 'hy')
+    .sort((a, b) => (a.kind === 'dy' ? 1 : 0) - (b.kind === 'dy' ? 1 : 0));
+  const THEME_LIMIT = 10;
+  const shownThemes = boardExpanded ? themeBoards : themeBoards.slice(0, THEME_LIMIT);
 
   useEffect(() => {
     try {
@@ -883,28 +938,53 @@ export default function ChartPane() {
             {q ? `${q.change > 0 ? '+' : ''}${fmtNum(q.change)} ${fmtPct(q.changePct)}` : ''}
           </span>
         </div>
-        <div className="quote-meta">
-          <span>
-            开 <b className={`num ${cls(q ? q.open - q.prevClose : 0)}`}>{q ? fmtNum(q.open) : '--'}</b>
-          </span>
-          <span>
-            高 <b className={`num ${cls(q ? q.high - q.prevClose : 0)}`}>{q ? fmtNum(q.high) : '--'}</b>
-          </span>
-          <span>
-            低 <b className={`num ${cls(q ? q.low - q.prevClose : 0)}`}>{q ? fmtNum(q.low) : '--'}</b>
-          </span>
-          <span>
-            量 <b className="num">{q ? fmtVolume(q.volume) : '--'}</b>
-          </span>
-          <span>
-            额 <b className="num">{q ? fmtAmount(q.amount) : '--'}</b>
-          </span>
-          <span>
-            换手 <b className="num">{q ? `${fmtNum(q.turnoverRate)}%` : '--'}</b>
-          </span>
-          <span>
-            量比 <b className="num">{q ? fmtNum(q.volumeRatio) : '--'}</b>
-          </span>
+        <div className="board-row">
+          {boards.length > 0 && industryBoards.length > 0 && (
+            <>
+              <span className="board-key">所属行业</span>
+              {industryBoards.map((b) => (
+                <span
+                  key={b.code}
+                  className="board-chip"
+                  onClick={() => setActiveBoard({ code: b.code, name: b.name, kind: b.kind, changePct: b.changePct })}
+                  title={`${b.name}　点击查看板块K线与成分股`}
+                >
+                  {b.name}
+                  <b className={`num ${cls(b.changePct)}`}>{fmtPct(b.changePct)}</b>
+                </span>
+              ))}
+            </>
+          )}
+          {boards.length > 0 && themeBoards.length > 0 && (
+            <>
+              <span className="board-key">概念</span>
+              {shownThemes.map((b) => (
+                <span
+                  key={b.code}
+                  className="board-chip"
+                  onClick={() => setActiveBoard({ code: b.code, name: b.name, kind: b.kind, changePct: b.changePct })}
+                  title={`${b.name}　点击查看板块K线与成分股`}
+                >
+                  {b.name}
+                  <b className={`num ${cls(b.changePct)}`}>{fmtPct(b.changePct)}</b>
+                </span>
+              ))}
+              {themeBoards.length > THEME_LIMIT && (
+                <span className="board-more" onClick={() => setBoardExpanded((v) => !v)}>
+                  {boardExpanded ? '收起 ▴' : `+${themeBoards.length - THEME_LIMIT} 更多 ▾`}
+                </span>
+              )}
+            </>
+          )}
+          {boards.length === 0 && (
+            <span className="board-empty">
+              {boardReady
+                ? '暂无板块数据'
+                : boardSync && boardSync.total
+                  ? `板块索引构建中 ${boardSync.done}/${boardSync.total}…`
+                  : '板块索引构建中…'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -1206,6 +1286,10 @@ export default function ChartPane() {
           {legend ? (legend.hovered ? `光标 ${legend.b.date}` : `最新 ${lastDate}`) : lastDate}
         </span>
       </div>
+
+      {activeBoard && (
+        <BoardModal board={activeBoard} onClose={() => setActiveBoard(null)} />
+      )}
     </div>
   );
 }
