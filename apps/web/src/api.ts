@@ -89,9 +89,13 @@ export const api = {
   quote: (symbols: string[]) =>
     get<{ quotes: Quote[]; stale: boolean }>(`/api/quote?symbols=${symbols.join(',')}`),
   kline: (symbol: string, period: string, limit = 400) =>
-    get<{ symbol: string; period: string; date?: string; bars: Bar[] }>(
-      `/api/kline?symbol=${symbol}&period=${period}&limit=${limit}`,
-    ),
+    get<{
+      symbol: string;
+      period: string;
+      date?: string;
+      bars: Bar[];
+      series?: IndicatorSeries | null;
+    }>(`/api/kline?symbol=${symbol}&period=${period}&limit=${limit}`),
   minute: (symbol: string) =>
     get<{ symbol: string; date: string; prevClose: number; points: MinutePoint[] }>(
       `/api/minute?symbol=${symbol}`,

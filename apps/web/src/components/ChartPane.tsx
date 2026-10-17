@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createChart,
   CandlestickSeries,
@@ -25,13 +25,40 @@ const PERIODS: Array<{ key: string; label: string }> = [
   { key: 'month', label: '月K' },
 ];
 
+/** 各周期一屏默认显示的 K 线根数，取同花顺的观感 */
+const BARS_ON_SCREEN: Record<string, number> = {
+  m5: 240,
+  m15: 176,
+  m30: 128,
+  m60: 96,
+  day: 150,
+  week: 140,
+  month: 120,
+};
+
 const SUB_INDICATORS = ['MACD', 'KDJ', 'RSI'] as const;
 type SubIndicator = (typeof SUB_INDICATORS)[number];
 
 const UP = '#d93026';
 const DOWN = '#12894f';
+const UP_SOFT = 'rgba(217,48,38,0.55)';
+const DOWN_SOFT = 'rgba(18,137,79,0.55)';
 
-function toTs(dateStr: string, fallbackDate?: string): number {
+const MA_COLORS = ['#c98a12', '#1f6feb', '#8b5cf6', '#6b7280'];
+
+/** 量柱坐标轴用中文单位，同花顺习惯「万手」而非 K */
+const VOLUME_FORMAT = {
+  type: 'custom' as const,
+  formatter: (v: number) => {
+    if (!Number.isFinite(v)) return '';
+    if (v >= 1e8) return `${(v / 1e8).toFixed(1)}亿`;
+    if (v >= 1e4) return `${(v / 1e4).toFixed(1)}万`;
+    return v.toFixed(0);
+  },
+  minMove: 1,
+};
+
+function toTs(dateStr: string): number {
   const m = (dateStr ?? '').trim();
   if (!m) return 0;
   if (m.length <= 10) {
@@ -40,8 +67,8 @@ function toTs(dateStr: string, fallbackDate?: string): number {
   }
   const [datePart, timePart] = m.split(' ');
   const [y, mo, d] = datePart.split('-').map(Number);
-  const [hh, mm] = timePart.split(':').map(Number);
-  return Date.UTC(y, mo - 1, d, hh, mm) / 1000;
+  const [hh, mi] = timePart.split(':').map(Number);
+  return Date.UTC(y, mo - 1, d, hh, mi) / 1000;
 }
 
 function minuteTs(date: string, hhmm: string): number {
@@ -50,11 +77,34 @@ function minuteTs(date: string, hhmm: string): number {
   return Date.UTC(y, mo - 1, d, hh, mm) / 1000;
 }
 
+/** 时间轴刻度：按跨度自动分层，分钟级别显示 HH:MM，跨日显示 MM/DD */
+function makeTickFormatter() {
+  return (time: any, tickMarkType?: number): string => {
+    if (typeof time !== 'number') return '';
+    const d = new Date(time * 1000);
+    const y = d.getUTCFullYear();
+    const mo = d.getUTCMonth() + 1;
+    const da = d.getUTCDate();
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mi = String(d.getUTCMinutes()).padStart(2, '0');
+    // TickMarkType: 0=Year 1=Month 2=DayOfMonth 3=Time 4=TimeWithSeconds
+    if (tickMarkType === 0) return `${y}`;
+    if (tickMarkType === 1) return `${mo}月`;
+    if (tickMarkType === 2) return `${mo}/${da}`;
+    return `${hh}:${mi}`;
+  };
+}
+
 export default function ChartPane() {
   const { selected, period, setPeriod, quotes, items } = useStore();
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any>[]>([]);
+
+  const barsRef = useRef<Bar[]>([]);
+  const indRef = useRef<IndicatorSeries | null>(null);
+  const timeIdxRef = useRef<Map<number, number>>(new Map());
+
   const [sub, setSub] = useState<SubIndicator>('MACD');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -64,6 +114,7 @@ export default function ChartPane() {
     null,
   );
   const [lastDate, setLastDate] = useState('');
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const q = quotes[selected];
   const name = q?.name || items.find((i) => i.symbol === selected)?.name || '';
@@ -83,7 +134,13 @@ export default function ChartPane() {
         horzLines: { color: '#f2f3f5' },
       },
       rightPriceScale: { borderColor: '#e3e6ea', scaleMargins: { top: 0.06, bottom: 0.06 } },
-      timeScale: { borderColor: '#e3e6ea', timeVisible: false, rightOffset: 3, barSpacing: 8 },
+      timeScale: {
+        borderColor: '#e3e6ea',
+        timeVisible: false,
+        rightOffset: 4,
+        barSpacing: 8,
+        tickMarkFormatter: makeTickFormatter(),
+      },
       crosshair: {
         mode: 1,
         vertLine: { color: '#b0b6bd', width: 1, style: LineStyle.Dashed, labelBackgroundColor: '#5b6169' },
@@ -91,23 +148,35 @@ export default function ChartPane() {
       },
       localization: {
         timeFormatter: (time: any) => {
-          const t = typeof time === 'number' ? time : null;
-          if (t === null) {
-            if (time?.year) return `${time.year}-${String(time.month).padStart(2, '0')}-${String(time.day).padStart(2, '0')}`;
+          if (typeof time !== 'number') {
+            if (time?.year) {
+              const mo = String(time.month).padStart(2, '0');
+              const da = String(time.day).padStart(2, '0');
+              return `${time.year}-${mo}-${da}`;
+            }
             return '';
           }
-          const d = new Date(t * 1000);
-          const y = d.getUTCFullYear();
+          const d = new Date(time * 1000);
           const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
           const da = String(d.getUTCDate()).padStart(2, '0');
           const hh = String(d.getUTCHours()).padStart(2, '0');
           const mi = String(d.getUTCMinutes()).padStart(2, '0');
-          if (hh === '00' && mi === '00') return `${y}-${mo}-${da}`;
-          return `${y}-${mo}-${da} ${hh}:${mi}`;
+          if (hh === '00' && mi === '00') return `${mo}-${da}`;
+          return `${mo}-${da} ${hh}:${mi}`;
         },
       },
     });
     chartRef.current = chart;
+
+    // 十字光标联动图例
+    chart.subscribeCrosshairMove((param) => {
+      if (!param.time || typeof param.time !== 'number') {
+        setHoverIdx(null);
+        return;
+      }
+      const idx = timeIdxRef.current.get(param.time as number);
+      setHoverIdx(idx === undefined ? null : idx);
+    });
 
     const ro = new ResizeObserver(() => {
       if (hostRef.current) {
@@ -159,24 +228,30 @@ export default function ChartPane() {
     let alive = true;
     setLoading(true);
     setError('');
+    setHoverIdx(null);
 
     const load = async () => {
       try {
         if (period === 'minute') {
           const r = await api.minute(selected);
           if (!alive) return;
-          setMinute(r);
+          // 同花顺口径：分时只画到 15:00，尾部盘后零星成交不入图
+          const points = r.points.filter((p) => p.time <= '15:00');
+          setMinute({ ...r, points });
           setBars([]);
           setInd(null);
           setLastDate(r.date);
         } else {
           const isDaily = period === 'day' || period === 'week' || period === 'month';
-          const k = await api.kline(selected, period, isDaily ? 500 : 400);
+          const k = await api.kline(selected, period, isDaily ? 500 : 1023);
           if (!alive) return;
           setBars(k.bars);
           setMinute(null);
           setLastDate(k.date ?? k.bars[k.bars.length - 1]?.date ?? '');
-          if (isDaily) {
+          if (k.series) {
+            // 分钟周期由服务端随 K 线一起算好
+            setInd(k.series);
+          } else if (isDaily) {
             const i = await api.indicators(selected, 500).catch(() => null);
             if (!alive) return;
             setInd(i?.series ?? null);
@@ -198,15 +273,30 @@ export default function ChartPane() {
   }, [selected, period]);
 
   useEffect(() => {
+    barsRef.current = bars;
+    indRef.current = ind;
+  }, [bars, ind]);
+
+  useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     clearSeries();
     if (!selected) return;
 
+    const isIntraday = period.startsWith('m') && period !== 'minute';
+
+    chart.applyOptions({
+      timeScale: {
+        timeVisible: period === 'minute' || isIntraday,
+        secondsVisible: false,
+      },
+      rightPriceScale: { scaleMargins: { top: 0.06, bottom: 0.06 } },
+    });
+
     if (period === 'minute' && minute) {
       renderMinute(chart, minute);
     } else if (bars.length) {
-      renderKline(chart, bars, ind);
+      renderKline(chart, bars, ind, period);
     }
 
     window.setTimeout(() => {
@@ -215,13 +305,86 @@ export default function ChartPane() {
         chart.timeScale().fitContent();
       } else {
         const total = bars.length;
-        const show = Math.min(150, total);
         if (total > 0) {
-          chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, total - show), to: total + 1 });
+          const show = Math.min(BARS_ON_SCREEN[period] ?? 150, total);
+          chart.timeScale().setVisibleLogicalRange({ from: total - show - 0.5, to: total + 1.5 });
         }
       }
     }, 0);
   }, [bars, ind, minute, period, sub, selected]);
+
+  /** 光标所在 bar（无光标时取最后一根），供图例显示 */
+  const legend = useMemo(() => {
+    const list = bars;
+    if (!list.length) return null;
+    const idx = hoverIdx !== null && hoverIdx >= 0 && hoverIdx < list.length ? hoverIdx : list.length - 1;
+    const b = list[idx];
+    if (!b) return null;
+    const prevClose = idx > 0 ? list[idx - 1].close : b.open;
+    const chg = b.close - prevClose;
+    const pct = prevClose ? (chg / prevClose) * 100 : 0;
+    const s = ind;
+    const at = (arr?: number[]) => (arr && Number.isFinite(arr[idx]) ? arr[idx] : null);
+    return {
+      b,
+      chg,
+      pct,
+      ma: s
+        ? [at(s.ma5), at(s.ma10), at(s.ma20), at(s.ma60)]
+        : [null, null, null, null],
+      sub: s
+        ? {
+            dif: at(s.macdDif),
+            dea: at(s.macdDea),
+            hist: at(s.macdHist),
+            k: at(s.kdjK),
+            d: at(s.kdjD),
+            j: at(s.kdjJ),
+            r6: at(s.rsi6),
+            r12: at(s.rsi12),
+          }
+        : null,
+      hovered: hoverIdx !== null,
+    };
+  }, [bars, ind, hoverIdx]);
+
+  /** 分时图例：光标处的价格、均价、涨跌幅、成交量 */
+  const minuteLegend = useMemo(() => {
+    if (!minute || !minute.points.length) return null;
+    const pts = minute.points;
+    let idx: number;
+    if (hoverIdx !== null && hoverIdx >= 0 && hoverIdx < pts.length) {
+      idx = hoverIdx;
+    } else {
+      // 收盘后尾部会有量为 0 的占位点，默认停在最后一根有成交的分钟上
+      idx = pts.length - 1;
+      for (let i = pts.length - 1; i >= 0; i--) {
+        if (pts[i].volume > 0) {
+          idx = i;
+          break;
+        }
+      }
+    }
+    const p = pts[idx];
+    if (!p) return null;
+    let cumVol = 0;
+    let cumAmt = 0;
+    for (let i = 0; i <= idx; i++) {
+      cumVol += pts[i].volume;
+      cumAmt += pts[i].amount;
+    }
+    const avg = cumVol > 0 ? cumAmt / (cumVol * 100) : p.price;
+    const pc = minute.prevClose || p.price;
+    return {
+      time: p.time,
+      price: p.price,
+      avg,
+      chg: p.price - pc,
+      pct: pc ? ((p.price - pc) / pc) * 100 : 0,
+      volume: p.volume,
+      hovered: hoverIdx !== null,
+    };
+  }, [minute, hoverIdx]);
 
   function renderMinute(
     chart: IChartApi,
@@ -248,6 +411,16 @@ export default function ChartPane() {
     const isUp = last >= data.prevClose;
     const mainColor = isUp ? UP : DOWN;
 
+    // 同花顺口径：分时价格轴以昨收为中轴、上下等幅，避免被单边行情撑歪
+    const hi = Math.max(...data.points.map((p) => p.price), data.prevClose || 0);
+    const lo = Math.min(...data.points.map((p) => p.price), data.prevClose || Infinity);
+    const span = Math.max(hi - (data.prevClose || hi), (data.prevClose || lo) - lo);
+    const pad = (span > 0 ? span : (hi - lo) * 0.5 || 0.1) * 1.08;
+    const symmetricScale = () =>
+      data.prevClose > 0
+        ? { priceRange: { minValue: data.prevClose - pad, maxValue: data.prevClose + pad } }
+        : null;
+
     const area = chart.addSeries(AreaSeries, {
       lineColor: mainColor,
       topColor: isUp ? 'rgba(217,48,38,0.16)' : 'rgba(18,137,79,0.16)',
@@ -256,6 +429,7 @@ export default function ChartPane() {
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
       priceLineVisible: false,
       lastValueVisible: true,
+      autoscaleInfoProvider: symmetricScale,
     });
     area.setData(priceData);
     seriesRef.current.push(area);
@@ -287,22 +461,30 @@ export default function ChartPane() {
 
     const vol = chart.addSeries(
       HistogramSeries,
-      { priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false },
+      { priceFormat: VOLUME_FORMAT, priceLineVisible: false, lastValueVisible: false },
       1,
     );
     vol.setData(
       data.points.map((p) => ({
         time: minuteTs(data.date, p.time) as UTCTimestamp,
         value: p.volume,
-        color: p.price >= (data.prevClose || p.price) ? 'rgba(217,48,38,0.5)' : 'rgba(18,137,79,0.5)',
+        color: p.price >= (data.prevClose || p.price) ? UP_SOFT : DOWN_SOFT,
       })),
     );
     seriesRef.current.push(vol);
 
-    chart.applyOptions({ timeScale: { timeVisible: true, secondsVisible: false } });
+    // 光标定位索引表（分时同样支持图例联动）
+    const idxMap = new Map<number, number>();
+    data.points.forEach((p, i) => idxMap.set(minuteTs(data.date, p.time), i));
+    timeIdxRef.current = idxMap;
+
+    chart.applyOptions({
+      timeScale: { timeVisible: true, secondsVisible: false },
+      rightPriceScale: { scaleMargins: { top: 0.02, bottom: 0.02 } },
+    });
   }
 
-  function renderKline(chart: IChartApi, list: Bar[], indicators: IndicatorSeries | null) {
+  function renderKline(chart: IChartApi, list: Bar[], indicators: IndicatorSeries | null, periodKey: string) {
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: UP,
       downColor: DOWN,
@@ -323,12 +505,12 @@ export default function ChartPane() {
     );
     seriesRef.current.push(candles);
 
-    const isIntraday = period.startsWith('m');
-    chart.applyOptions({
-      timeScale: { timeVisible: isIntraday, secondsVisible: false },
-    });
+    // 光标定位索引表
+    const idxMap = new Map<number, number>();
+    list.forEach((b, i) => idxMap.set(toTs(b.date), i));
+    timeIdxRef.current = idxMap;
 
-    if (indicators && period === 'day') {
+    if (indicators) {
       const line = (values: number[], color: string) => {
         const s = chart.addSeries(
           LineSeries,
@@ -341,40 +523,40 @@ export default function ChartPane() {
           },
           0,
         );
-        s.setData(
-          values
-            .map((v, i) => ({ time: toTs(indicators.date[i]) as UTCTimestamp, value: v }))
-            .filter((p) => Number.isFinite(p.value) && p.time > 0),
-        );
+        const pts: Array<{ time: UTCTimestamp; value: number }> = [];
+        for (let i = 0; i < values.length && i < list.length; i++) {
+          const v = values[i];
+          if (!Number.isFinite(v)) continue;
+          pts.push({ time: toTs(list[i].date) as UTCTimestamp, value: v });
+        }
+        s.setData(pts);
         seriesRef.current.push(s);
         return s;
       };
-      line(indicators.ma5, '#c98a12');
-      line(indicators.ma10, '#1f6feb');
-      line(indicators.ma20, '#8b5cf6');
-      line(indicators.ma60, '#6b7280');
+      line(indicators.ma5, MA_COLORS[0]);
+      line(indicators.ma10, MA_COLORS[1]);
+      line(indicators.ma20, MA_COLORS[2]);
+      line(indicators.ma60, MA_COLORS[3]);
     }
 
     const vol = chart.addSeries(
       HistogramSeries,
-      { priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false },
+      { priceFormat: VOLUME_FORMAT, priceLineVisible: false, lastValueVisible: false },
       1,
     );
     vol.setData(
       list.map((b) => ({
         time: toTs(b.date) as UTCTimestamp,
         value: b.volume,
-        color: b.close >= b.open ? 'rgba(217,48,38,0.55)' : 'rgba(18,137,79,0.55)',
+        color: b.close >= b.open ? UP_SOFT : DOWN_SOFT,
       })),
     );
     seriesRef.current.push(vol);
 
-    if (indicators && period === 'day') {
-      renderSub(chart, indicators);
-    }
+    if (indicators) renderSub(chart, indicators, list);
   }
 
-  function renderSub(chart: IChartApi, s: IndicatorSeries) {
+  function renderSub(chart: IChartApi, s: IndicatorSeries, list: Bar[]) {
     const mk = (values: number[], color: string, extra: Record<string, unknown> = {}) => {
       const ser = chart.addSeries(
         LineSeries,
@@ -388,11 +570,13 @@ export default function ChartPane() {
         },
         2,
       );
-      ser.setData(
-        values
-          .map((v, i) => ({ time: toTs(s.date[i]) as UTCTimestamp, value: v }))
-          .filter((p) => Number.isFinite(p.value) && p.time > 0),
-      );
+      const pts: Array<{ time: UTCTimestamp; value: number }> = [];
+      for (let i = 0; i < values.length && i < list.length; i++) {
+        const v = values[i];
+        if (!Number.isFinite(v)) continue;
+        pts.push({ time: toTs(list[i].date) as UTCTimestamp, value: v });
+      }
+      ser.setData(pts);
       seriesRef.current.push(ser);
       return ser;
     };
@@ -403,27 +587,32 @@ export default function ChartPane() {
         { priceLineVisible: false, lastValueVisible: false },
         2,
       );
-      hist.setData(
-        s.macdHist
-          .map((v, i) => ({
-            time: toTs(s.date[i]) as UTCTimestamp,
-            value: v,
-            color: v >= 0 ? 'rgba(217,48,38,0.6)' : 'rgba(18,137,79,0.6)',
-          }))
-          .filter((p) => Number.isFinite(p.value) && p.time > 0),
-      );
+      const pts: Array<{ time: UTCTimestamp; value: number; color: string }> = [];
+      for (let i = 0; i < s.macdHist.length && i < list.length; i++) {
+        const v = s.macdHist[i];
+        if (!Number.isFinite(v)) continue;
+        pts.push({
+          time: toTs(list[i].date) as UTCTimestamp,
+          value: v,
+          color: v >= 0 ? UP_SOFT : DOWN_SOFT,
+        });
+      }
+      hist.setData(pts);
       seriesRef.current.push(hist);
-      mk(s.macdDif, '#c98a12');
-      mk(s.macdDea, '#1f6feb');
+      mk(s.macdDif, MA_COLORS[0]);
+      mk(s.macdDea, MA_COLORS[1]);
     } else if (sub === 'KDJ') {
-      mk(s.kdjK, '#c98a12');
-      mk(s.kdjD, '#1f6feb');
-      mk(s.kdjJ, '#8b5cf6');
+      mk(s.kdjK, MA_COLORS[0]);
+      mk(s.kdjD, MA_COLORS[1]);
+      mk(s.kdjJ, MA_COLORS[2]);
     } else {
-      mk(s.rsi6, '#c98a12');
-      mk(s.rsi12, '#1f6feb');
+      mk(s.rsi6, MA_COLORS[0]);
+      mk(s.rsi12, MA_COLORS[1]);
     }
   }
+
+  const isMinute = period === 'minute';
+  const showMa = !isMinute && !!legend;
 
   return (
     <div className="chart-col">
@@ -479,7 +668,7 @@ export default function ChartPane() {
               key={s}
               className={`period-tab${sub === s ? ' active' : ''}`}
               onClick={() => setSub(s)}
-              style={{ visibility: period === 'day' ? 'visible' : 'hidden' }}
+              style={{ visibility: isMinute ? 'hidden' : 'visible' }}
             >
               {s}
             </span>
@@ -491,6 +680,116 @@ export default function ChartPane() {
         {loading && <div className="chart-loading">加载中…</div>}
         {!loading && error && <div className="chart-loading">加载失败：{error}</div>}
         {!loading && !error && !bars.length && !minute && <div className="chart-loading">暂无数据</div>}
+
+        {isMinute && minuteLegend && (
+          <div className="chart-legend">
+            <div className="legend-row">
+              <span className="legend-time">{minuteLegend.time}</span>
+              <span>
+                <i>价</i>
+                <b className={`num ${cls(minuteLegend.chg)}`}>{fmtNum(minuteLegend.price)}</b>
+              </span>
+              <span>
+                <i>均</i>
+                <b className="num" style={{ color: '#c98a12' }}>
+                  {fmtNum(minuteLegend.avg)}
+                </b>
+              </span>
+              <span className={`num ${cls(minuteLegend.chg)}`}>
+                {minuteLegend.chg > 0 ? '+' : ''}
+                {fmtNum(minuteLegend.chg)} ({minuteLegend.pct > 0 ? '+' : ''}
+                {fmtNum(minuteLegend.pct)}%)
+              </span>
+              <span>
+                <i>量</i>
+                <b className="num">{fmtVolume(minuteLegend.volume)}</b>
+              </span>
+            </div>
+          </div>
+        )}
+
+        {!isMinute && legend && (
+          <div className="chart-legend">
+            <div className="legend-row">
+              <span className="legend-time">{legend.b.date}</span>
+              <span>
+                <i>开</i>
+                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.open)}</b>
+              </span>
+              <span>
+                <i>高</i>
+                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.high)}</b>
+              </span>
+              <span>
+                <i>低</i>
+                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.low)}</b>
+              </span>
+              <span>
+                <i>收</i>
+                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.close)}</b>
+              </span>
+              <span className={`num ${cls(legend.chg)}`}>
+                {legend.chg > 0 ? '+' : ''}
+                {fmtNum(legend.chg)} ({legend.pct > 0 ? '+' : ''}
+                {fmtNum(legend.pct)}%)
+              </span>
+              <span>
+                <i>量</i>
+                <b className="num">{fmtVolume(legend.b.volume)}</b>
+              </span>
+            </div>
+            {showMa && (
+              <div className="legend-row legend-ma">
+                {['MA5', 'MA10', 'MA20', 'MA60'].map((label, i) => (
+                  <span key={label} style={{ color: MA_COLORS[i] }}>
+                    {label}{' '}
+                    <b className="num">{legend.ma[i] === null ? '--' : fmtNum(legend.ma[i] as number)}</b>
+                  </span>
+                ))}
+              </div>
+            )}
+            {!isMinute && legend.sub && (
+              <div className="legend-row legend-ma">
+                {sub === 'MACD' && (
+                  <>
+                    <span style={{ color: MA_COLORS[0] }}>
+                      DIF <b className="num">{fmtNum(legend.sub.dif)}</b>
+                    </span>
+                    <span style={{ color: MA_COLORS[1] }}>
+                      DEA <b className="num">{fmtNum(legend.sub.dea)}</b>
+                    </span>
+                    <span style={{ color: (legend.sub.hist ?? 0) >= 0 ? UP : DOWN }}>
+                      MACD <b className="num">{fmtNum(legend.sub.hist)}</b>
+                    </span>
+                  </>
+                )}
+                {sub === 'KDJ' && (
+                  <>
+                    <span style={{ color: MA_COLORS[0] }}>
+                      K <b className="num">{fmtNum(legend.sub.k)}</b>
+                    </span>
+                    <span style={{ color: MA_COLORS[1] }}>
+                      D <b className="num">{fmtNum(legend.sub.d)}</b>
+                    </span>
+                    <span style={{ color: MA_COLORS[2] }}>
+                      J <b className="num">{fmtNum(legend.sub.j)}</b>
+                    </span>
+                  </>
+                )}
+                {sub === 'RSI' && (
+                  <>
+                    <span style={{ color: MA_COLORS[0] }}>
+                      RSI6 <b className="num">{fmtNum(legend.sub.r6)}</b>
+                    </span>
+                    <span style={{ color: MA_COLORS[1] }}>
+                      RSI12 <b className="num">{fmtNum(legend.sub.r12)}</b>
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div
@@ -503,11 +802,9 @@ export default function ChartPane() {
           borderTop: '1px solid var(--border)',
         }}
       >
-        <span style={{ color: '#c98a12', visibility: period === 'minute' ? 'hidden' : 'visible' }}>MA5</span>
-        <span style={{ color: '#1f6feb', visibility: period === 'minute' ? 'hidden' : 'visible' }}>MA10</span>
-        <span style={{ color: '#8b5cf6', visibility: period === 'minute' ? 'hidden' : 'visible' }}>MA20</span>
-        <span style={{ color: '#6b7280', visibility: period === 'minute' ? 'hidden' : 'visible' }}>MA60</span>
-        <span style={{ marginLeft: 'auto' }}>{lastDate ? `数据日期 ${lastDate}` : ''}</span>
+        <span style={{ marginLeft: 'auto' }}>
+          {legend ? (legend.hovered ? `光标 ${legend.b.date}` : `最新 ${lastDate}`) : lastDate}
+        </span>
       </div>
     </div>
   );

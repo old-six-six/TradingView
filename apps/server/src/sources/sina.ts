@@ -1,4 +1,4 @@
-import type { StockInfo, Quote } from '../types.js';
+import type { StockInfo, Quote, Bar } from '../types.js';
 
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -123,4 +123,69 @@ export async function fetchStocks(): Promise<StockInfo[]> {
     name: q.name,
     market: q.symbol.slice(0, 2).toUpperCase(),
   }));
+}
+
+interface SinaKlineRow {
+  day: string;
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+  volume: string;
+  amount?: string;
+}
+
+/** 分钟 K 内存缓存：同周期 45 秒内复用，避免来回切周期时重复打源站 */
+const minuteKlineCache = new Map<string, { at: number; bars: Bar[] }>();
+const MINUTE_KLINE_TTL = 45_000;
+
+/**
+ * 拉取历史分钟 K（新浪）。
+ * scale 支持 5/15/30/60，datalen 上限 1023 根。
+ * 返回的 day 是**该根 K 线的结束时间**（如 5 分钟首根为 09:35），与同花顺口径一致。
+ * volume 源站单位是股，这里统一折成手，与全站一致。
+ */
+export async function fetchMinuteKline(
+  symbol: string,
+  scale: number,
+  datalen = 1023,
+): Promise<Bar[]> {
+  const key = `${symbol}:${scale}`;
+  const hit = minuteKlineCache.get(key);
+  if (hit && Date.now() - hit.at < MINUTE_KLINE_TTL) return hit.bars;
+
+  const url =
+    'https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData' +
+    `?symbol=${symbol}&scale=${scale}&ma=no&datalen=${datalen}`;
+  const rows = await getJson<SinaKlineRow[]>(url);
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  const bars: Bar[] = [];
+  for (const r of rows) {
+    const open = numOf(r.open);
+    const close = numOf(r.close);
+    if (!(open > 0) || !(close > 0)) continue;
+    const day = String(r.day ?? '').trim();
+    if (!day) continue;
+    bars.push({
+      // 只保留到分钟，去掉秒
+      date: day.length > 16 ? day.slice(0, 16) : day,
+      open,
+      high: numOf(r.high),
+      low: numOf(r.low),
+      close,
+      volume: numOf(r.volume) / 100,
+    });
+  }
+
+  // 时间戳去重并保持升序，lightweight-charts 要求严格递增
+  bars.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const dedup: Bar[] = [];
+  for (const b of bars) {
+    if (dedup.length && dedup[dedup.length - 1].date === b.date) dedup[dedup.length - 1] = b;
+    else dedup.push(b);
+  }
+
+  if (dedup.length) minuteKlineCache.set(key, { at: Date.now(), bars: dedup });
+  return dedup;
 }

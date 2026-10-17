@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getQuotes, sourceHealth, isCircuitOpen } from '../sources/gateway.js';
 import { toSymbol, fetchMinute, fetchKline } from '../sources/tencent.js';
-import { lastMarketCache, fetchAllMarket } from '../sources/sina.js';
+import { lastMarketCache, fetchAllMarket, fetchMinuteKline } from '../sources/sina.js';
 import {
   getDailyBars,
   getIndicators,
@@ -72,8 +72,34 @@ export async function apiRoutes(app: FastifyInstance) {
     }
 
     const minutes = Number(period.replace('m', '')) || 1;
+
+    // 分钟 K：优先取新浪历史分钟线（最多 1023 根），失败再退回当日分时聚合
+    if (minutes >= 5) {
+      try {
+        const bars = await fetchMinuteKline(sym, minutes, n);
+        if (bars.length) {
+          return {
+            symbol: sym,
+            period,
+            date: bars[bars.length - 1].date,
+            bars,
+            series: calcIndicators(bars),
+          };
+        }
+      } catch {
+        /* 落到下面的本地聚合 */
+      }
+    }
+
     const { date, points } = await fetchMinute(sym);
-    return { symbol: sym, period, date, bars: aggregateMinute(points, minutes, date) };
+    const bars = aggregateMinute(points, minutes, date);
+    return {
+      symbol: sym,
+      period,
+      date,
+      bars,
+      series: bars.length ? calcIndicators(bars) : null,
+    };
   });
 
   app.get('/api/minute', async (req, reply) => {
