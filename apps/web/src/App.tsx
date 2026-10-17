@@ -10,7 +10,7 @@ import MarketPage from './components/MarketPage';
 import StatusBar from './components/StatusBar';
 
 export default function App() {
-  const { items, selected, setItems, mergeQuotes, setConnected, select, market, setMarket } =
+  const { items, selected, setItems, mergeQuotes, setConnected, select, market, setMarket, sidebar } =
     useStore();
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<number>(0);
@@ -144,7 +144,7 @@ export default function App() {
           <MarketPage board={market} />
         ) : (
           <>
-            <WatchList />
+            {sidebar && <WatchList />}
             <ChartPane />
             <OrderBook />
           </>

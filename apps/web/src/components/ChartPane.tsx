@@ -163,10 +163,26 @@ function makeTickFormatter() {
 }
 
 export default function ChartPane() {
-  const { selected, period, setPeriod, quotes, items } = useStore();
+  const { selected, period, setPeriod, quotes, items, sidebar, toggleSidebar } = useStore();
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any>[]>([]);
+  /** 主图 K 线序列，键盘左右键定位光标时要知道价格轴挂在谁身上 */
+  const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  /** 光标当前所在的 K 线索引，null = 还没定位过 */
+  const xhairRef = useRef<number | null>(null);
+  /** 光标此刻是否显示在图上（鼠标移开后为 false，但索引留着好接着按方向键） */
+  const xhairOn = useRef(false);
+  /** 视野跟随光标的 rAF 句柄，连按时只保留最后一次补偿 */
+  const followRaf = useRef(0);
+  /**
+   * 程序化移动光标的静默期（performance.now 时间戳）。
+   * 光标被键盘挪到视野外时，图表会把它钳到边缘并按边缘那根回调，
+   * 若采信这个回调，索引会倒退一格 —— 连按就变成一格走两根。
+   */
+  const progUntil = useRef(0);
+  /** 上一帧请求的可见范围，用来确认窗口是否已经生效 */
+  const pendingRange = useRef<{ from: number; to: number } | null>(null);
 
   const barsRef = useRef<Bar[]>([]);
   const indRef = useRef<IndicatorSeries | null>(null);
@@ -410,12 +426,21 @@ export default function ChartPane() {
 
     // 十字光标联动图例
     chart.subscribeCrosshairMove((param) => {
+      if (performance.now() < progUntil.current) return;
       if (!param.time || typeof param.time !== 'number') {
+        xhairOn.current = false;
         setHoverIdx(null);
         return;
       }
       const idx = timeIdxRef.current.get(param.time as number);
-      setHoverIdx(idx === undefined ? null : idx);
+      if (idx === undefined) {
+        xhairOn.current = false;
+        setHoverIdx(null);
+        return;
+      }
+      xhairRef.current = idx;
+      xhairOn.current = true;
+      setHoverIdx(idx);
     });
 
     // 记录用户当前的缩放/平移位置
@@ -425,12 +450,22 @@ export default function ChartPane() {
 
     const ro = new ResizeObserver(() => {
       if (hostRef.current) {
+        // 先记下当前光标位置：applyOptions 之后图表会按像素重算十字线并回调，
+        // 那时 xhairRef 已经被改掉了
+        const keep = xhairOn.current ? xhairRef.current : null;
         chart.applyOptions({
           width: hostRef.current.clientWidth,
           height: hostRef.current.clientHeight,
         });
         layoutPanes();
         requestAnimationFrame(measurePaneTops);
+        // 宽度变了十字线会按像素重新吸附到别的 K 线上，重新钉回原来那根
+        if (keep !== null) {
+          requestAnimationFrame(() => {
+            xhairRef.current = keep;
+            placeCrosshair(0);
+          });
+        }
       }
     });
     ro.observe(hostRef.current);
@@ -449,6 +484,91 @@ export default function ChartPane() {
       chartRef.current = null;
     };
   }, []);
+
+  /**
+   * 左右方向键挪光标：逐根走，走出视野时把窗口跟着平移一格，
+   * 这样一直按住 ← 就能从最新一根一路回看到上市首日。
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // 列表页有自己的左右滚动，不抢
+      if (useStore.getState().market) return;
+
+      const list = barsRef.current;
+      const chart = chartRef.current;
+      const candle = candleRef.current;
+      if (!list.length || !chart || !candle) return;
+      e.preventDefault();
+
+      const ts = chart.timeScale();
+      // 还没定位过就从当前视野右端起算，跟「直接按←」的直觉一致。
+      // 用 floor 不用 round：右侧留白会让 range.to 略大于最后一根，
+      // round 会算到倒数第二根，第一次按键就跳两格
+      const vr = ts.getVisibleLogicalRange();
+      const start =
+        xhairRef.current ??
+        Math.min(list.length - 1, Math.max(0, Math.floor(vr?.to ?? list.length - 1)));
+      const next = Math.max(0, Math.min(list.length - 1, start + (e.key === 'ArrowRight' ? 1 : -1)));
+      xhairRef.current = next;
+      setHoverIdx(next);
+
+      // 等到下一帧再定位：窗口平移是异步生效的，同一帧里读到的还是旧范围
+      if (followRaf.current) cancelAnimationFrame(followRaf.current);
+      followRaf.current = requestAnimationFrame(() => placeCrosshair(0));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /**
+   * 把十字光标钉到 xhairRef 指向的那根 K 线上。
+   * 光标落在视野外时图表会把它钳到边缘，而且十字线是按像素记位置的 ——
+   * 窗口一平移，同一个像素就落到左边一根去了。所以必须「先挪窗口 →
+   * 确认窗口真的生效 → 再定位光标」，否则图例和坐标轴上的日期会差一两根。
+   */
+  function placeCrosshair(depth: number) {
+    followRaf.current = 0;
+    const chart = chartRef.current;
+    const candle = candleRef.current;
+    const list = barsRef.current;
+    const i = xhairRef.current;
+    if (!chart || !candle || i === null || !list[i]) return;
+
+    const ts = chart.timeScale();
+    const r = ts.getVisibleLogicalRange();
+
+    // 上一帧请求的窗口还没生效，继续等
+    const want = pendingRange.current;
+    if (want && r && (Math.abs(r.from - want.from) > 0.01 || Math.abs(r.to - want.to) > 0.01)) {
+      if (depth < 10) {
+        followRaf.current = requestAnimationFrame(() => placeCrosshair(depth + 1));
+        return;
+      }
+    }
+    pendingRange.current = null;
+
+    if (r && (i < r.from + 0.5 || i > r.to - 0.5)) {
+      const w = r.to - r.from;
+      const nr = i <= r.from ? { from: i - 1, to: i - 1 + w } : { from: i + 1 - w, to: i + 1 };
+      pendingRange.current = nr;
+      ts.setVisibleLogicalRange(nr);
+      if (depth < 10) {
+        followRaf.current = requestAnimationFrame(() => placeCrosshair(depth + 1));
+        return;
+      }
+    }
+
+    progUntil.current = performance.now() + 200;
+    chart.setCrosshairPosition(list[i].close, toTs(list[i].date) as UTCTimestamp, candle);
+    // 图表不会为程序化定位回调 subscribeCrosshairMove，图例只能自己跟着走
+    xhairOn.current = true;
+    setHoverIdx(i);
+  }
 
   function layoutPanes() {
     const chart = chartRef.current;
@@ -512,6 +632,7 @@ export default function ChartPane() {
       }
     }
     seriesRef.current = [];
+    candleRef.current = null;
   }
 
   useEffect(() => {
@@ -525,6 +646,9 @@ export default function ChartPane() {
     setBars([]);
     setInd(null);
     setMinute(null);
+    // 换票/换周期后旧的 K 线索引已经没意义
+    xhairRef.current = null;
+    xhairOn.current = false;
 
     const load = async () => {
       try {
@@ -822,6 +946,7 @@ export default function ChartPane() {
       })),
     );
     seriesRef.current.push(candles);
+    candleRef.current = candles;
 
     // 光标定位索引表
     const idxMap = new Map<number, number>();
@@ -1398,6 +1523,14 @@ export default function ChartPane() {
           borderTop: '1px solid var(--border)',
         }}
       >
+        <span
+          className="foot-btn"
+          onClick={toggleSidebar}
+          title={sidebar ? '收起左侧自选' : '展开左侧自选'}
+        >
+          {sidebar ? '◀ 自选' : '▶ 自选'}
+        </span>
+        <span className="foot-hint">← → 移动光标</span>
         <span style={{ marginLeft: 'auto' }}>
           {legend ? (legend.hovered ? `光标 ${legend.b.date}` : `最新 ${lastDate}`) : lastDate}
         </span>

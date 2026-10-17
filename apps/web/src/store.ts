@@ -12,6 +12,17 @@ export interface MarketStat {
   loading: boolean;
 }
 
+const SIDEBAR_KEY = 'tv.sidebar';
+
+/** 左侧自选是否展开，刷新后保持 */
+function loadSidebar(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
 interface State {
   items: WatchItem[];
   quotes: Record<string, Quote>;
@@ -20,6 +31,9 @@ interface State {
   /** 全市场列表页：null 表示看图表 */
   market: string | null;
   marketStat: MarketStat | null;
+  /** 左侧自选栏是否展开 */
+  sidebar: boolean;
+  toggleSidebar: () => void;
   stale: boolean;
   connected: boolean;
   lastTs: number;
@@ -39,6 +53,17 @@ export const useStore = create<State>((set) => ({
   period: 'day',
   market: null,
   marketStat: null,
+  sidebar: loadSidebar(),
+  toggleSidebar: () =>
+    set((s) => {
+      const next = !s.sidebar;
+      try {
+        localStorage.setItem(SIDEBAR_KEY, next ? '1' : '0');
+      } catch {
+        /* 忽略隐私模式下的写入失败 */
+      }
+      return { sidebar: next };
+    }),
   stale: false,
   connected: false,
   lastTs: 0,
