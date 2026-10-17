@@ -15,7 +15,8 @@ import { apiRoutes } from './routes/api.js';
 import { setupWs } from './routes/ws.js';
 import { setWatchProvider, startPoller } from './service/poller.js';
 import { syncMany } from './service/sync.js';
-import { ensureBoardIndex } from './service/boardSync.js';
+import { ensureBoardIndex, boardIndexCount } from './service/boardSync.js';
+import { ensureEmTagIndex } from './service/emTagSync.js';
 import { pruneSamples } from './service/marketList.js';
 import { fetchStocks, fetchAllMarket } from './sources/sina.js';
 import { toSymbol } from './sources/tencent.js';
@@ -102,6 +103,15 @@ async function bootstrap() {
 
   // 板块反向索引：超过 12 小时才重建，首次约 3–5 分钟，后台跑不挡启动
   void ensureBoardIndex();
+
+  // 科创板 / 北交所的板块只能逐只问东财，等腾讯板块表就绪后再跑
+  void (async () => {
+    for (let i = 0; i < 40; i++) {
+      if ((await boardIndexCount()) > 0) break;
+      await new Promise((r) => setTimeout(r, 15000));
+    }
+    void ensureEmTagIndex();
+  })();
 
   // 列表页的涨速样本与现手基线：定期清掉长时间没被访问的票
   setInterval(pruneSamples, 5 * 60 * 1000);

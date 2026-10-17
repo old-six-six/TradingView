@@ -110,6 +110,19 @@ CREATE TABLE IF NOT EXISTS board_member (
   PRIMARY KEY (board_code, symbol)
 );
 CREATE INDEX IF NOT EXISTS idx_board_member_symbol ON board_member(symbol);
+
+-- 东财 F10 的个股板块标签。
+-- 腾讯板块成分股不含科创板/北交所，这两个市场只能反过来按个股去问东财；
+-- board_code 为空表示腾讯体系里没有同名板块，前端只作标签展示。
+CREATE TABLE IF NOT EXISTS stock_em_tag (
+  symbol TEXT NOT NULL,
+  name TEXT NOT NULL,
+  rank INTEGER DEFAULT 0,
+  board_code TEXT,
+  updated_at TEXT,
+  PRIMARY KEY (symbol, name)
+);
+CREATE INDEX IF NOT EXISTS idx_em_tag_symbol ON stock_em_tag(symbol);
 `;
 
 export async function initDb(): Promise<void> {

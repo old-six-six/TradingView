@@ -203,6 +203,8 @@ export default function ChartPane() {
     null,
   );
   const [boardExpanded, setBoardExpanded] = useState(false);
+  /** 东财有、腾讯无同名板块的标签，是纯文字不可点（科创/北交所才有） */
+  const [boardTags, setBoardTags] = useState<string[]>([]);
   const [activeBoard, setActiveBoard] = useState<BoardRef | null>(null);
   const [paneTops, setPaneTops] = useState<number[]>([]);
   const paneRoRef = useRef<ResizeObserver | null>(null);
@@ -214,10 +216,12 @@ export default function ChartPane() {
   useEffect(() => {
     if (!selected) {
       setBoards([]);
+      setBoardTags([]);
       return;
     }
     let alive = true;
     setBoards([]);
+    setBoardTags([]);
     setBoardExpanded(false);
     api
       .stockBoards(selected)
@@ -226,6 +230,7 @@ export default function ChartPane() {
         setBoards(r.boards);
         setBoardReady(r.ready);
         setBoardSync(r.sync ?? null);
+        setBoardTags(r.tags ?? []);
       })
       .catch(() => undefined);
     return () => {
@@ -243,6 +248,7 @@ export default function ChartPane() {
           setBoards(r.boards);
           setBoardReady(r.ready);
           setBoardSync(r.sync ?? null);
+          setBoardTags(r.tags ?? []);
         })
         .catch(() => undefined);
     }, 8000);
@@ -255,6 +261,8 @@ export default function ChartPane() {
     .filter((b) => b.kind !== 'hy')
     .sort((a, b) => (a.kind === 'dy' ? 1 : 0) - (b.kind === 'dy' ? 1 : 0));
   const THEME_LIMIT = 10;
+  /** 纯标签默认只露 6 个，展开后全给 */
+  const TAG_LIMIT = 6;
   const shownThemes = boardExpanded ? themeBoards : themeBoards.slice(0, THEME_LIMIT);
 
   useEffect(() => {
@@ -1050,7 +1058,26 @@ export default function ChartPane() {
               )}
             </>
           )}
-          {boards.length === 0 && (
+          {boardTags.length > 0 && (
+            <>
+              <span className="board-key">标签</span>
+              {(boardExpanded ? boardTags : boardTags.slice(0, TAG_LIMIT)).map((t) => (
+                <span
+                  key={t}
+                  className="board-tag"
+                  title={`${t}　东财板块，腾讯无同名板块，暂不提供板块 K 线与成分股`}
+                >
+                  {t}
+                </span>
+              ))}
+              {boardTags.length > TAG_LIMIT && (
+                <span className="board-more" onClick={() => setBoardExpanded((v) => !v)}>
+                  {boardExpanded ? '收起 ▴' : `+${boardTags.length - TAG_LIMIT} 更多 ▾`}
+                </span>
+              )}
+            </>
+          )}
+          {boards.length === 0 && boardTags.length === 0 && (
             <span className="board-empty">
               {boardReady
                 ? '暂无板块数据'

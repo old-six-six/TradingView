@@ -192,6 +192,8 @@ export const api = {
       symbol: string;
       ready: boolean;
       boards: StockBoard[];
+      /** 东财有、腾讯没有同名板块的标签（科创板/北交所），只展示不可点 */
+      tags?: string[];
       sync?: { running: boolean; done: number; total: number };
     }>(`/api/stock/boards?symbol=${symbol}`),
   boardKline: (code: string, period = 'day', limit = 400) =>

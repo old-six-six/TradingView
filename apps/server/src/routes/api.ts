@@ -31,6 +31,7 @@ import {
   boardIndexCount,
   boardSyncState,
 } from '../service/boardSync.js';
+import { tagsOfStock, emTagSyncState } from '../service/emTagSync.js';
 import { marketRows, isMarketKey, MARKETS } from '../service/marketList.js';
 import { MAX_BARS, FULL_HISTORY } from '../config.js';
 import type { IndicatorSeries, Bar } from '../types.js';
@@ -286,6 +287,8 @@ export async function apiRoutes(app: FastifyInstance) {
     }
 
     const boards = await boardsOfStock(sym);
+    // 科创板 / 北交所的板块来自东财 F10，其中对不上腾讯板块名的只作标签展示
+    const tags = await tagsOfStock(sym);
     let live: Awaited<ReturnType<typeof fetchBoardQuotes>> = [];
     try {
       live = await fetchBoardQuotes(boards.map((b) => b.code));
@@ -297,6 +300,7 @@ export async function apiRoutes(app: FastifyInstance) {
       symbol: sym,
       ready: true,
       sync: boardSyncState(),
+      tagsSync: emTagSyncState(),
       boards: boards.map((b) => {
         const q = map.get(b.code);
         return {
@@ -306,6 +310,7 @@ export async function apiRoutes(app: FastifyInstance) {
           price: q?.price ?? 0,
         };
       }),
+      tags,
     };
   });
 

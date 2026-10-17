@@ -36,8 +36,7 @@ export async function fetchKlineFull(
   symbol: string,
   period: 'day' | 'week' | 'month',
   limit = 10000,
-): Promise<Bar[]> {
-  const secid = toSecid(symbol);
+): Promise<Bar[]> {  const secid = toSecid(symbol);
   if (!secid) return [];
   const klt = period === 'day' ? 101 : period === 'week' ? 102 : 103;
   const url =
@@ -76,4 +75,55 @@ export async function fetchKlineFull(
     });
   }
   return bars;
+}
+
+/** 东财 F10 返回的板块标签（所属板块 ssbk） */
+export interface EmBoardTag {
+  /** 板块名，如「电子」「半导体」「专精特新」 */
+  name: string;
+  /** 东财板块代码，4 位数字，如 1201 */
+  code: string;
+  /** 东财给的排序，越小越靠前（一级行业在前） */
+  rank: number;
+}
+
+/**
+ * 个股所属板块（东财 F10「核心题材」页的 ssbk）。
+ *
+ * 腾讯只提供「板块 → 成分股」，且成分股里不含科创板（688）与北交所（920），
+ * 这两个市场的板块归属只能反过来按个股问东财。返回的板块名可与腾讯板块名
+ * 对齐后复用同一套 K 线 / 成分股能力。
+ *
+ * code 参数格式为 SH/SZ/BJ + 6 位代码，北交所同样认 BJ920xxx。
+ */
+export async function fetchStockBoardTags(symbol: string): Promise<EmBoardTag[]> {
+  const m = /^(sh|sz|bj)(\d{6})$/i.exec(symbol.toLowerCase());
+  if (!m) return [];
+  const prefix = m[1] === 'sh' ? 'SH' : m[1] === 'sz' ? 'SZ' : 'BJ';
+  const url =
+    'https://emweb.securities.eastmoney.com/PC_HSF10/CoreConception/PageAjax' +
+    `?code=${prefix}${m[2]}`;
+
+  const res = await fetch(url, {
+    headers: { 'User-Agent': UA, Referer: 'https://emweb.securities.eastmoney.com/' },
+    signal: AbortSignal.timeout(TIMEOUT),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status} eastmoney f10`);
+  const json = (await res.json()) as {
+    ssbk?: Array<{ BOARD_NAME?: string; BOARD_CODE?: string; BOARD_RANK?: number }>;
+  };
+  const list = Array.isArray(json?.ssbk) ? json.ssbk : [];
+  const out: EmBoardTag[] = [];
+  const seen = new Set<string>();
+  list.forEach((b, i) => {
+    const name = String(b?.BOARD_NAME ?? '').trim();
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    out.push({
+      name,
+      code: String(b?.BOARD_CODE ?? ''),
+      rank: Number.isFinite(Number(b?.BOARD_RANK)) ? Number(b.BOARD_RANK) : i,
+    });
+  });
+  return out;
 }

@@ -96,6 +96,7 @@ async function runSync(): Promise<void> {
       await sleep(GAP_MS);
     }
     await setSetting('board_index_at', String(Date.now()));
+    await backfillEmMembers();
     console.log(`[board] 成分索引完成，${state.done} 个板块，耗时 ${Date.now() - state.startedAt}ms`);
   } catch (e) {
     state.error = (e as Error).message;
@@ -106,8 +107,25 @@ async function runSync(): Promise<void> {
   }
 }
 
-export interface StockBoard {
-  code: string;
+/**
+ * 重建 board_member 后回填东财补的关系。
+ * 腾讯成分股不含科创板/北交所，这批关系存在 stock_em_tag 里，
+ * 上面那句 DELETE 会把它们一起清掉，所以每次重建都要补回来。
+ */
+async function backfillEmMembers(): Promise<void> {
+  const rows = await query<{ symbol: string; board_code: string }>(
+    'SELECT symbol, board_code FROM stock_em_tag WHERE board_code IS NOT NULL',
+  );
+  if (!rows.length) return;
+  await upsertBatch(
+    'board_member',
+    ['board_code', 'symbol'],
+    rows.map((r) => [esc(r.board_code), esc(r.symbol)]),
+  );
+  console.log(`[board] 回填东财板块关系 ${rows.length} 条`);
+}
+
+export interface StockBoard {  code: string;
   name: string;
   kind: BoardKind;
   /** 实时涨跌幅，取不到时用索引里的快照 */

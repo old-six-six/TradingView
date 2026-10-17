@@ -366,8 +366,25 @@ button {
   font-size: 11px;
 }
 
-.board-more {
-  color: var(--accent);
+/* 纯标签：东财有、腾讯无同名板块，只读不点 */
+.board-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-3);
+  white-space: nowrap;
+  user-select: none;
+  cursor: help;
+}
+
+.board-tag:hover {
+  color: var(--text-2);
+  border-color: var(--text-3);
+}
+
+.board-more {  color: var(--accent);
   cursor: pointer;
   user-select: none;
   padding: 1px 2px;
