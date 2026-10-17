@@ -916,6 +916,36 @@ button {
   font-size: 11px;
   color: var(--text-3);
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* 列表页：返回图表按钮与当前市场名 */
+.sb-back {
+  cursor: pointer;
+  padding: 1px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-2);
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.sb-back:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sb-cur {
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sb-sep {
+  width: 1px;
+  height: 11px;
+  background: var(--border-strong);
+  flex-shrink: 0;
 }
 
 .empty {
@@ -933,56 +963,6 @@ button {
   display: flex;
   flex-direction: column;
   min-height: 0;
-}
-
-.mk-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.mk-back {
-  font-size: 12px;
-  color: var(--text-2);
-  cursor: pointer;
-  padding: 2px 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
-.mk-back:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.mk-title {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.mk-tabs {
-  display: flex;
-  gap: 2px;
-  margin-left: 4px;
-}
-
-.mk-meta {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--text-3);
-  white-space: nowrap;
-}
-
-.mk-meta b {
-  font-weight: 500;
-}
-
-.mk-time {
-  color: var(--text-3);
 }
 
 /* 表格容器：纵向 + 横向滚动都在这一个盒子里 */

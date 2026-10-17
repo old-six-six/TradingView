@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type MarketRow } from '../api';
 import { useStore } from '../store';
+import { gotoChart } from '../nav';
 import { cls, fmtNum, fmtPct } from '../fmt';
 
 export const MARKET_TABS = [
@@ -268,7 +269,7 @@ const COLS: Col[] = [
 const TOTAL_W = COLS.reduce((s, c) => s + c.w, 0);
 
 export default function MarketPage({ board }: { board: string }) {
-  const { select, setMarket } = useStore();
+  const { setMarketStat } = useStore();
   const [rows, setRows] = useState<MarketRow[]>([]);
   const [updatedAt, setUpdatedAt] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -351,6 +352,22 @@ export default function MarketPage({ board }: { board: string }) {
   const downCount = rows.filter((r) => r.changePct < 0).length;
   const label = MARKET_TABS.find((t) => t.key === board)?.label ?? board;
 
+  // 汇总信息交给状态栏显示（本组件不再自带顶栏）
+  useEffect(() => {
+    setMarketStat({
+      key: board,
+      label: err || label,
+      count: rows.length,
+      up: upCount,
+      down: downCount,
+      updatedAt,
+      loading: loading && !rows.length,
+    });
+  }, [board, label, err, rows.length, upCount, downCount, updatedAt, loading, setMarketStat]);
+
+  // 离开列表页时清掉，免得图表页状态栏还挂着上一个市场
+  useEffect(() => () => useStore.getState().setMarketStat(null), []);
+
   const sortBy = (col: Col) => {
     if (col.key === 'none') return;
     setSort((prev) => {
@@ -365,62 +382,8 @@ export default function MarketPage({ board }: { board: string }) {
     setScrollTop(0);
   };
 
-  const openChart = (symbol: string) => {
-    select(symbol);
-    setMarket(null);
-    const url = new URL(location.href);
-    url.searchParams.delete('board');
-    url.searchParams.set('symbol', symbol);
-    history.replaceState(null, '', url);
-  };
-
   return (
     <div className="mk-page">
-      <div className="mk-bar">
-        <span
-          className="mk-back"
-          onClick={() => {
-            setMarket(null);
-            const url = new URL(location.href);
-            url.searchParams.delete('board');
-            history.replaceState(null, '', url);
-          }}
-          title="返回图表"
-        >
-          ← 返回
-        </span>
-        <span className="mk-title">{err || label}</span>
-        <div className="mk-tabs">
-          {MARKET_TABS.map((t) => (
-            <span
-              key={t.key}
-              className={`period-tab${t.key === board ? ' active' : ''}`}
-              onClick={() => {
-                if (t.key === board) return;
-                setMarket(t.key);
-                const url = new URL(location.href);
-                url.searchParams.set('board', t.key);
-                history.replaceState(null, '', url);
-              }}
-            >
-              {t.label}
-            </span>
-          ))}
-        </div>
-        <span className="mk-meta">
-          {rows.length} 只
-          <b className="up"> 涨 {upCount}</b>
-          <b className="down"> 跌 {downCount}</b>
-          {updatedAt > 0 && (
-            <span className="mk-time">
-              {' '}
-              {new Date(updatedAt).toLocaleTimeString('zh-CN', { hour12: false })}
-            </span>
-          )}
-          {loading && !rows.length && <span className="mk-time"> 加载中…</span>}
-        </span>
-      </div>
-
       <div
         className="mk-scroll"
         ref={boxRef}
@@ -450,7 +413,7 @@ export default function MarketPage({ board }: { board: string }) {
               className="mk-row"
               key={r.symbol}
               style={{ height: ROW_H }}
-              onClick={() => openChart(r.symbol)}
+              onClick={() => gotoChart(r.symbol)}
               title={`${r.name} ${r.code}`}
             >
               {COLS.map((c) => {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type Quote } from '../api';
 import { useStore } from '../store';
+import { gotoMarket } from '../nav';
 import { cls, fmtNum, fmtPct } from '../fmt';
 
 const INDEXES = [
@@ -12,7 +13,7 @@ const INDEXES = [
 ];
 
 export default function TopBar() {
-  const { connected, stale, items, setItems, select, market, setMarket } = useStore();
+  const { connected, stale, items, setItems, select, market } = useStore();
   const [idx, setIdx] = useState<Record<string, Quote>>({});
   const [kw, setKw] = useState('');
   const [results, setResults] = useState<Array<{ symbol: string; code: string; name: string }>>([]);
@@ -111,12 +112,7 @@ export default function TopBar() {
             <span
               key={i.symbol}
               className={`idx-item${market === i.market ? ' on' : ''}`}
-              onClick={() => {
-                setMarket(i.market);
-                const url = new URL(location.href);
-                url.searchParams.set('board', i.market);
-                history.replaceState(null, '', url);
-              }}
+              onClick={() => gotoMarket(i.market)}
               title={`查看${i.full}全部股票`}
             >
               {i.label}{' '}

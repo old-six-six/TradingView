@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { api, type Quote } from './api';
 import { useStore } from './store';
+import { backToChart } from './nav';
 import TopBar from './components/TopBar';
 import WatchList from './components/WatchList';
 import ChartPane from './components/ChartPane';
@@ -101,6 +102,16 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      // 列表页里 Esc 退回图表
+      if (e.key === 'Escape') {
+        if (useStore.getState().market) {
+          e.preventDefault();
+          backToChart();
+        }
+        return;
+      }
+      // 列表页的上下键交给表格自己滚，不再切自选
+      if (useStore.getState().market) return;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         move(1);

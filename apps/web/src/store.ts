@@ -1,6 +1,17 @@
 import { create } from 'zustand';
 import type { Quote, WatchItem } from './api';
 
+/** 列表页的汇总信息，由 MarketPage 上报、状态栏展示 */
+export interface MarketStat {
+  key: string;
+  label: string;
+  count: number;
+  up: number;
+  down: number;
+  updatedAt: number;
+  loading: boolean;
+}
+
 interface State {
   items: WatchItem[];
   quotes: Record<string, Quote>;
@@ -8,6 +19,7 @@ interface State {
   period: string;
   /** 全市场列表页：null 表示看图表 */
   market: string | null;
+  marketStat: MarketStat | null;
   stale: boolean;
   connected: boolean;
   lastTs: number;
@@ -16,6 +28,7 @@ interface State {
   select: (symbol: string) => void;
   setPeriod: (p: string) => void;
   setMarket: (m: string | null) => void;
+  setMarketStat: (s: MarketStat | null) => void;
   setConnected: (v: boolean) => void;
 }
 
@@ -25,6 +38,7 @@ export const useStore = create<State>((set) => ({
   selected: '',
   period: 'day',
   market: null,
+  marketStat: null,
   stale: false,
   connected: false,
   lastTs: 0,
@@ -39,5 +53,6 @@ export const useStore = create<State>((set) => ({
   select: (symbol) => set({ selected: symbol }),
   setPeriod: (period) => set({ period }),
   setMarket: (market) => set({ market }),
+  setMarketStat: (marketStat) => set({ marketStat }),
   setConnected: (connected) => set({ connected }),
 }));

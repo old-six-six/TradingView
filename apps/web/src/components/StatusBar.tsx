@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
+import { backToChart } from '../nav';
 
 export default function StatusBar() {
-  const { connected, stale, quotes, lastTs, items } = useStore();
+  const { connected, stale, quotes, lastTs, items, market, marketStat } = useStore();
   const [health, setHealth] = useState<Record<string, any> | null>(null);
 
   useEffect(() => {
@@ -15,9 +16,31 @@ export default function StatusBar() {
 
   const src = health?.sources?.[0];
   const t = lastTs ? new Date(lastTs).toLocaleTimeString('zh-CN', { hour12: false }) : '--';
+  const listTs = marketStat?.updatedAt
+    ? new Date(marketStat.updatedAt).toLocaleTimeString('zh-CN', { hour12: false })
+    : '';
 
   return (
     <div className="statusbar">
+      {market ? (
+        <>
+          <span className="sb-back" onClick={backToChart} title="返回图表（Esc）">
+            ← 返回图表
+          </span>
+          <span className="sb-cur">{marketStat?.label ?? market}</span>
+          {marketStat?.loading && <span>加载中…</span>}
+          {marketStat && !marketStat.loading && (
+            <>
+              <span>{marketStat.count} 只</span>
+              <span className="up">涨 {marketStat.up}</span>
+              <span className="down">跌 {marketStat.down}</span>
+            </>
+          )}
+          {listTs && <span>更新 {listTs}</span>}
+          <span className="sb-sep" />
+        </>
+      ) : null}
+
       <span>
         <span
           className="status-dot"
@@ -28,11 +51,11 @@ export default function StatusBar() {
       <span>数据源 {src?.name ?? '--'}</span>
       <span>延迟 {src?.latencyMs ? `${src.latencyMs}ms` : '--'}</span>
       <span>股票库 {health?.stocks ?? 0} 只</span>
-      <span>缓存 {Object.keys(quotes).length} 只</span>
-      <span>更新 {t}</span>
+      {!market && <span>缓存 {Object.keys(quotes).length} 只</span>}
+      {!market && <span>更新 {t}</span>}
       {stale && <span style={{ color: 'var(--down)' }}>降级中</span>}
       <span style={{ marginLeft: 'auto' }}>
-        自选 {items.length} · ↑↓ 切换 · 空格刷新
+        {market ? 'Esc 返回 · 点任意行看 K 线' : `自选 ${items.length} · ↑↓ 切换 · 空格刷新`}
       </span>
     </div>
   );
