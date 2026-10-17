@@ -134,6 +134,9 @@ button {
   gap: 16px;
   font-size: 12px;
   color: var(--text-2);
+  /* 窗口很窄时宁可裁掉末尾的指数，也别压到右侧的连接状态 */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .status-dot {

@@ -7,6 +7,8 @@ const INDEXES = [
   { symbol: 'sh000001', label: '上证' },
   { symbol: 'sz399001', label: '深证' },
   { symbol: 'sz399006', label: '创业板' },
+  { symbol: 'sh000688', label: '科创50' },
+  { symbol: 'bj899050', label: '北证50' },
 ];
 
 export default function TopBar() {
