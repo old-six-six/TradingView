@@ -19,7 +19,8 @@ import type { Bar } from '../types.js';
  */
 
 const TOP_N = 100;
-const CONCURRENCY = 6;
+/** 合成一次板块指数要拉上百只票的 K 线，并发压低一点，别把上游 WAF 惹毛 */
+const CONCURRENCY = 4;
 const TTL_MS = 24 * 3600 * 1000;
 const BASE = 1000;
 

@@ -180,21 +180,50 @@ async function fetchSnapshotChunk(symbols: string[]): Promise<Snapshot[]> {
 
 interface KlineResp {
   code: number;
-  data?: Record<string, Record<string, Array<Array<string | number>> | undefined>>;
+  msg?: string;
+  data?: Record<string, Record<string, unknown>>;
 }
 
-/** 日/周/月 K，前复权。返回按时间升序 */
-export async function fetchKline(
-  symbol: string,
-  period: 'day' | 'week' | 'month',
-  count = 640,
-): Promise<Bar[]> {
-  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},${period},,,${count},qfq`;
-  const json = await getJson<KlineResp>(url);
-  const node = json?.data?.[symbol];
-  if (!node) return [];
-  const raw = (node[`qfq${period}`] ?? node[period]) as Array<Array<string | number>> | undefined;
-  if (!Array.isArray(raw)) return [];
+/**
+ * 腾讯前复权 K 线的两个入口。
+ *
+ * 老域名 `web.ifzq.gtimg.cn/appstock/app/fqkline/get` 会被腾讯 WAF 判 501
+ * （返回 waf.tencent.com/501page.html，HTTP 501 + 一段跳转脚本），一旦命中
+ * 该域名下所有股票的 fqkline 全部拿不到数据。`proxy.finance.qq.com` 下的
+ * newfqkline 是同一接口的新入口，返回结构一致（qfqday / qfqweek / qfqmonth），
+ * 目前稳定。两个都留着互为备份。
+ */
+const QFQ_HOSTS = [
+  'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get',
+  'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get',
+];
+
+/** 不复权端点，仅在前复权两个入口都失败时兜底（价格与实时价一致，历史不复权） */
+const RAW_HOST = 'https://web.ifzq.gtimg.cn/appstock/app/kline/kline';
+
+/** 腾讯单次请求能取到的最大根数，再多会返回 param error */
+export const KLINE_PAGE = 640;
+
+function pickRows(
+  node: Record<string, unknown> | undefined,
+  period: string,
+): Array<Array<string | number>> | null {
+  if (!node) return null;
+  // 前复权端点给 qfqday/qfqweek/qfqmonth，不复权端点只有 day/week/month
+  for (const key of [`qfq${period}`, period]) {
+    const v = node[key];
+    if (Array.isArray(v) && v.length) return v as Array<Array<string | number>>;
+  }
+  return null;
+}
+
+/**
+ * 转成 Bar。这里只丢掉字段缺失的坏行，**不按价格正负过滤**：
+ * 前复权在长期高送转个股的老历史段会出现负价（如 000001 的 90 年代），
+ * 那是复权计算的结果。若在翻页时把它们滤掉，页内根数会不足 640，
+ * 会被误判成「已到上市首日」而提前结束翻页。
+ */
+function toBars(raw: Array<Array<string | number>>): Bar[] {
   return raw
     .map((r) => ({
       // 腾讯列序：日期, 开, 收, 高, 低, 量
@@ -205,8 +234,102 @@ export async function fetchKline(
       low: Number(r[4]),
       volume: Number(r[5]),
     }))
-    .filter((b) => b.date && Number.isFinite(b.close) && b.close > 0)
+    .filter(
+      (b) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(b.date) &&
+        Number.isFinite(b.close) &&
+        Number.isFinite(b.open) &&
+        Number.isFinite(b.high) &&
+        Number.isFinite(b.low),
+    )
     .sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/** 负价只出现在老历史段，画到图上会把整根 K 线压到 0 轴以下，渲染前剔掉 */
+function positiveOnly(bars: Bar[]): Bar[] {
+  return bars.filter((b) => b.close > 0);
+}
+
+function shiftDate(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  t.setUTCDate(t.getUTCDate() + days);
+  return t.toISOString().slice(0, 10);
+}
+
+/**
+ * 拉一页 K 线（最多 KLINE_PAGE 根）。传 end 表示「截止到这一天（含）」，
+ * 用来把窗口往前挪着翻页。
+ */
+async function fetchKlinePage(
+  symbol: string,
+  period: 'day' | 'week' | 'month',
+  count: number,
+  end?: string,
+): Promise<Bar[]> {
+  const n = Math.min(KLINE_PAGE, Math.max(1, Math.floor(count)));
+  const param = `${symbol},${period},,${end ?? ''},${n},qfq`;
+  let lastErr: unknown = null;
+
+  for (const host of QFQ_HOSTS) {
+    try {
+      const json = await getJson<KlineResp>(`${host}?param=${param}`);
+      const rows = pickRows(json?.data?.[symbol], period);
+      if (rows) return toBars(rows);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  // 前复权都挂了：退到不复权端点，形态还能看，价格轴与实时价一致
+  try {
+    const json = await getJson<KlineResp>(`${RAW_HOST}?param=${symbol},${period},,,${n}`);
+    const rows = pickRows(json?.data?.[symbol], period);
+    if (rows) return toBars(rows);
+  } catch (e) {
+    lastErr = e;
+  }
+
+  if (lastErr) throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+  return [];
+}
+
+/** 日/周/月 K，前复权。单页最多 640 根，返回按时间升序 */
+export async function fetchKline(
+  symbol: string,
+  period: 'day' | 'week' | 'month',
+  count = KLINE_PAGE,
+): Promise<Bar[]> {
+  return positiveOnly(await fetchKlinePage(symbol, period, count));
+}
+
+/** 翻页上限：640 根 × 40 页 = 25600 根，足够覆盖最老的票 */
+const MAX_PAGES = 40;
+
+/**
+ * 抓尽可能长的历史。腾讯单次上限 640 根，返回不满一页说明已到上市首日；
+ * 否则用 end 参数把窗口一段段往前挪，直到凑够 want（want <= 0 表示翻到底）。
+ * 这是东财 push2his 被封之后取全量历史的唯一可靠路子。
+ */
+export async function fetchKlineDeep(
+  symbol: string,
+  period: 'day' | 'week' | 'month',
+  want = 0,
+): Promise<Bar[]> {
+  const seen = new Map<string, Bar>();
+  let end: string | undefined;
+  for (let i = 0; i < MAX_PAGES; i++) {
+    const page = await fetchKlinePage(symbol, period, KLINE_PAGE, end);
+    if (!page.length) break;
+    for (const b of page) seen.set(b.date, b);
+    if (want > 0 && seen.size >= want) break;
+    if (page.length < KLINE_PAGE) break; // 到头了
+    const next = shiftDate(page[0].date, -1);
+    if (end === next) break; // 上游无视 end 参数时防死循环
+    end = next;
+  }
+  const all = positiveOnly([...seen.values()].sort((a, b) => (a.date < b.date ? -1 : 1)));
+  return want > 0 && all.length > want ? all.slice(all.length - want) : all;
 }
 
 interface MinuteResp {

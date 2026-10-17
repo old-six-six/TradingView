@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { getQuotes, sourceHealth, isCircuitOpen } from '../sources/gateway.js';
-import { toSymbol, fetchMinute, fetchKline } from '../sources/tencent.js';
+import { toSymbol, fetchMinute, fetchKline, fetchKlineDeep, KLINE_PAGE } from '../sources/tencent.js';
 import { fetchKlineFull } from '../sources/eastmoney.js';
 import { lastMarketCache, fetchAllMarket, fetchMinuteKline } from '../sources/sina.js';
 import {
   getDailyBars,
   getIndicators,
+  upsertDailyBars,
   listWatchlist,
   addWatch,
   removeWatch,
@@ -80,10 +81,8 @@ export async function apiRoutes(app: FastifyInstance) {
       : Math.min(MAX_BARS, Math.max(10, Number(limit) || 400));
 
     if (period === 'day') {
-      const bars = await getDailyBars(sym, n);
-      if (bars.length) return { symbol: sym, period, bars };
-      const fetched = await fetchFullOrFallback(sym, 'day', n);
-      return { symbol: sym, period, bars: fetched };
+      const bars = await dailyBars(sym, n);
+      return { symbol: sym, period, bars };
     }
 
     if (period === 'week' || period === 'month') {
@@ -381,21 +380,86 @@ async function prevCloseOf(symbol: string): Promise<number> {
 }
 
 /**
- * 周/月 K 以及日 K 无本地缓存时的取数：东财给全部历史，失败退回腾讯。
- * n > 0 时只裁最近 n 根。
+ * 周/月 K 的取数：腾讯前复权翻页抓全量（东财 push2his 目前被 WAF 拦成空 body，
+ * 只做第二顺位），n > 0 时只裁最近 n 根。
  */
 async function fetchFullOrFallback(
   symbol: string,
   period: 'day' | 'week' | 'month',
   n: number,
 ): Promise<Bar[]> {
+  const want = n > 0 ? n : FULL_HISTORY;
   try {
-    const bars = await fetchKlineFull(symbol, period, n > 0 ? n : FULL_HISTORY);
+    const bars = await fetchKlineDeep(symbol, period, want);
     if (bars.length) return bars;
   } catch {
-    /* 落到腾讯 */
+    /* 落到东财 */
   }
-  return fetchKline(symbol, period, n > 0 ? n : 640);
+  try {
+    const bars = await fetchKlineFull(symbol, period, want);
+    if (bars.length) return bars;
+  } catch {
+    /* 都拿不到就交给前端显示暂无数据 */
+  }
+  return [];
+}
+
+/** 按日期合并两组 K 线，后者覆盖前者 */
+function mergeBars(base: Bar[], add: Bar[]): Bar[] {
+  const map = new Map<string, Bar>();
+  for (const b of base) map.set(b.date, b);
+  for (const b of add) map.set(b.date, b);
+  return [...map.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/** 同一日期上收盘价差异超过 0.5%，说明上游对这一段做过前复权重算 */
+function qfqDrifted(cached: Bar[], tail: Bar[]): boolean {
+  const byDate = new Map(cached.map((b) => [b.date, b]));
+  for (const t of tail) {
+    const c = byDate.get(t.date);
+    if (!c || !(t.close > 0)) continue;
+    if (Math.abs(c.close - t.close) > t.close * 0.005) return true;
+  }
+  return false;
+}
+
+/**
+ * 日 K 取数：库里已有的历史直接用，每次只回源补最新一页（640 根），
+ * 所以从列表页点进一只没缓存过的票只会多花一页的请求；历史不全时才翻页抓全量。
+ */
+async function dailyBars(symbol: string, n: number): Promise<Bar[]> {
+  const wantAll = n <= 0;
+  const cached = await getDailyBars(symbol, n);
+
+  if (!cached.length) {
+    // 第一次打开这只票：翻页抓全量并落库，下次秒开
+    const deep = await fetchKlineDeep(symbol, 'day', wantAll ? FULL_HISTORY : n).catch(
+      () => [] as Bar[],
+    );
+    if (deep.length) await upsertDailyBars(symbol, deep).catch(() => undefined);
+    return deep;
+  }
+
+  const tail = await fetchKline(symbol, 'day', KLINE_PAGE).catch(() => [] as Bar[]);
+
+  // 上游除权重算过前复权价：老缓存与新价对不上，整段重抓，避免图中间出现跳空
+  if (tail.length && qfqDrifted(cached, tail)) {
+    await query(`DELETE FROM daily_bar WHERE symbol = ${esc(symbol)}`).catch(() => undefined);
+    await query(`DELETE FROM indicator_daily WHERE symbol = ${esc(symbol)}`).catch(() => undefined);
+    const deep = await fetchKlineDeep(symbol, 'day', wantAll ? FULL_HISTORY : Math.max(n, KLINE_PAGE)).catch(
+      () => [] as Bar[],
+    );
+    const bars = deep.length ? deep : tail;
+    await upsertDailyBars(symbol, bars).catch(() => undefined);
+    return wantAll ? bars : bars.slice(-n);
+  }
+
+  // 上游挂了就用手里的缓存，不算失败
+  if (!tail.length) return wantAll ? cached : cached.slice(-n);
+
+  const merged = mergeBars(cached, tail);
+  if (merged.length !== cached.length) void upsertDailyBars(symbol, tail).catch(() => undefined);
+  return wantAll ? merged : merged.slice(-n);
 }
 
 /** 日线合并成周/月线：首日开、末日收、最高最低取极值、量累加 */

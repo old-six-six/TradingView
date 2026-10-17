@@ -1,4 +1,4 @@
-import { fetchKline } from '../sources/tencent.js';
+import { fetchKline, fetchKlineDeep, KLINE_PAGE } from '../sources/tencent.js';
 import { fetchKlineFull } from '../sources/eastmoney.js';
 import { upsertDailyBars, upsertIndicators, getDailyBars } from '../db/repo.js';
 import { calcIndicators } from '../engine/indicator.js';
@@ -16,22 +16,23 @@ export interface SyncResult {
 /**
  * 单只票的日 K 全量刷新 + 指标重算。
  *
- * 优先东财取「上市以来全部」历史（腾讯单次硬上限 640 根），东财失败
- * 时退回腾讯最近 640 根，保证界面不至于空白。
+ * 库里没有历史时才翻页抓「上市以来全部」（腾讯单次硬上限 640 根），
+ * 已有历史就只补最近一页，避免每次启动都打出几十个请求。腾讯两条路都
+ * 失败时退回东财。
  */
 export async function syncOne(symbol: string, count = DAILY_BARS): Promise<SyncResult> {
+  const stored = await getDailyBars(symbol, 0);
   let bars: Bar[] = [];
-  let source = 'eastmoney';
+  let source = 'tencent';
   try {
-    bars = await fetchKlineFull(symbol, 'day', FULL_HISTORY);
-  } catch {
-    bars = [];
-  }
-  if (!bars.length) {
-    source = 'tencent';
+    bars = stored.length
+      ? await fetchKline(symbol, 'day', Math.max(count, KLINE_PAGE))
+      : await fetchKlineDeep(symbol, 'day', FULL_HISTORY);
+  } catch (e) {
+    source = 'eastmoney';
     try {
-      bars = await fetchKline(symbol, 'day', count);
-    } catch (e) {
+      bars = await fetchKlineFull(symbol, 'day', FULL_HISTORY);
+    } catch {
       return { symbol, ok: false, bars: 0, source, error: (e as Error).message };
     }
   }
@@ -40,8 +41,8 @@ export async function syncOne(symbol: string, count = DAILY_BARS): Promise<SyncR
   try {
     await upsertDailyBars(symbol, bars);
     // 指标按库里全部历史重算，均线/MACD 的起始段才正确
-    const stored = await getDailyBars(symbol, 0);
-    const ind = calcIndicators(stored);
+    const all = await getDailyBars(symbol, 0);
+    const ind = calcIndicators(all);
     await upsertIndicators(symbol, ind);
     return { symbol, ok: true, bars: bars.length, source };
   } catch (e) {
