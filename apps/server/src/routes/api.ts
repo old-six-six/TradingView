@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getQuotes, sourceHealth, isCircuitOpen } from '../sources/gateway.js';
 import { toSymbol, fetchMinute, fetchKline } from '../sources/tencent.js';
+import { fetchKlineFull } from '../sources/eastmoney.js';
 import { lastMarketCache, fetchAllMarket, fetchMinuteKline } from '../sources/sina.js';
 import {
   getDailyBars,
@@ -18,7 +19,8 @@ import { aggregateMinute } from '../engine/minute-agg.js';
 import { calcIndicators } from '../engine/indicator.js';
 import { lastSnapshot, setDetail, isTradingTime } from '../service/poller.js';
 import { query } from '../db/sqlite.js';
-import type { IndicatorSeries } from '../types.js';
+import { MAX_BARS, FULL_HISTORY } from '../config.js';
+import type { IndicatorSeries, Bar } from '../types.js';
 
 function parseSymbols(raw?: string): string[] {
   if (!raw) return [];
@@ -51,24 +53,29 @@ export async function apiRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/kline', async (req, reply) => {
-    const { symbol, period = 'day', limit = '400' } = req.query as Record<string, string>;
+    const { symbol, period = 'day', limit = '400', all } = req.query as Record<string, string>;
     const sym = toSymbol(symbol ?? '');
     if (!sym || sym.length < 8) {
       reply.code(400);
       return { error: '缺少 symbol' };
     }
-    const n = Math.min(2000, Math.max(10, Number(limit) || 400));
+    // limit=all 或 limit=0 → 取上市以来全部
+    const wantAll = all === '1' || limit === 'all' || Number(limit) === 0;
+    const n = wantAll
+      ? 0
+      : Math.min(MAX_BARS, Math.max(10, Number(limit) || 400));
 
     if (period === 'day') {
       const bars = await getDailyBars(sym, n);
       if (bars.length) return { symbol: sym, period, bars };
-      const fetched = await fetchKline(sym, 'day', n);
+      const fetched = await fetchFullOrFallback(sym, 'day', n);
       return { symbol: sym, period, bars: fetched };
     }
 
     if (period === 'week' || period === 'month') {
-      const bars = await fetchKline(sym, period, n);
-      return { symbol: sym, period, bars };
+      const bars = await fetchFullOrFallback(sym, period, n);
+      // 周/月线的均线、MACD 必须按自身周期算，不能套日线指标（索引会错位）
+      return { symbol: sym, period, bars, series: bars.length ? calcIndicators(bars) : null };
     }
 
     const minutes = Number(period.replace('m', '')) || 1;
@@ -76,7 +83,7 @@ export async function apiRoutes(app: FastifyInstance) {
     // 分钟 K：优先取新浪历史分钟线（最多 1023 根），失败再退回当日分时聚合
     if (minutes >= 5) {
       try {
-        const bars = await fetchMinuteKline(sym, minutes, n);
+        const bars = await fetchMinuteKline(sym, minutes, n || 1023);
         if (bars.length) {
           return {
             symbol: sym,
@@ -115,9 +122,10 @@ export async function apiRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/indicators', async (req) => {
-    const { symbol, limit = '400' } = req.query as Record<string, string>;
+    const { symbol, limit = '400', all } = req.query as Record<string, string>;
     const sym = toSymbol(symbol ?? '');
-    const n = Math.min(2000, Math.max(10, Number(limit) || 400));
+    const wantAll = all === '1' || limit === 'all' || Number(limit) === 0;
+    const n = wantAll ? 0 : Math.min(MAX_BARS, Math.max(10, Number(limit) || 400));
     const rows = await getIndicators(sym, n);
     if (!rows.length) {
       const bars = await getDailyBars(sym, n);
@@ -253,6 +261,24 @@ async function prevCloseOf(symbol: string): Promise<number> {
   const bars = await getDailyBars(symbol, 2);
   if (bars.length >= 2) return bars[bars.length - 2].close;
   return bars[0]?.close ?? 0;
+}
+
+/**
+ * 周/月 K 以及日 K 无本地缓存时的取数：东财给全部历史，失败退回腾讯。
+ * n > 0 时只裁最近 n 根。
+ */
+async function fetchFullOrFallback(
+  symbol: string,
+  period: 'day' | 'week' | 'month',
+  n: number,
+): Promise<Bar[]> {
+  try {
+    const bars = await fetchKlineFull(symbol, period, n > 0 ? n : FULL_HISTORY);
+    if (bars.length) return bars;
+  } catch {
+    /* 落到腾讯 */
+  }
+  return fetchKline(symbol, period, n > 0 ? n : 640);
 }
 
 function toSeries(rows: Record<string, unknown>[]): IndicatorSeries {

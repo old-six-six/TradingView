@@ -88,7 +88,7 @@ export const api = {
   health: () => get<Record<string, unknown>>('/api/health'),
   quote: (symbols: string[]) =>
     get<{ quotes: Quote[]; stale: boolean }>(`/api/quote?symbols=${symbols.join(',')}`),
-  kline: (symbol: string, period: string, limit = 400) =>
+  kline: (symbol: string, period: string, limit: number | 'all' = 400) =>
     get<{
       symbol: string;
       period: string;
@@ -100,7 +100,7 @@ export const api = {
     get<{ symbol: string; date: string; prevClose: number; points: MinutePoint[] }>(
       `/api/minute?symbol=${symbol}`,
     ),
-  indicators: (symbol: string, limit = 400) =>
+  indicators: (symbol: string, limit: number | 'all' = 400) =>
     get<{ symbol: string; series: IndicatorSeries | null }>(
       `/api/indicators?symbol=${symbol}&limit=${limit}`,
     ),

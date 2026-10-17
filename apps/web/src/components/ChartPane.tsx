@@ -247,7 +247,8 @@ export default function ChartPane() {
           setLastDate(r.date);
         } else {
           const isDaily = period === 'day' || period === 'week' || period === 'month';
-          const k = await api.kline(selected, period, isDaily ? 500 : 1023);
+          // 日/周/月取全量历史（日 K 自上市以来，最长的票约 8500 根）
+          const k = await api.kline(selected, period, isDaily ? 'all' : 1023);
           if (!alive) return;
           setBars(k.bars);
           setMinute(null);
@@ -256,7 +257,7 @@ export default function ChartPane() {
             // 分钟周期由服务端随 K 线一起算好
             setInd(k.series);
           } else if (isDaily) {
-            const i = await api.indicators(selected, 500).catch(() => null);
+            const i = await api.indicators(selected, 'all').catch(() => null);
             if (!alive) return;
             setInd(i?.series ?? null);
           } else {

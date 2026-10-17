@@ -56,10 +56,12 @@ export async function upsertDailyBars(symbol: string, bars: Bar[]): Promise<void
   await upsertBatch('daily_bar', ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume'], rows);
 }
 
+/** limit <= 0 表示取全部（自上市以来） */
 export async function getDailyBars(symbol: string, limit = 640): Promise<Bar[]> {
+  const tail = limit > 0 ? ` LIMIT ${Math.floor(limit)}` : '';
   const rows = await query<Record<string, unknown>>(
     `SELECT date, open, high, low, close, volume FROM daily_bar
-     WHERE symbol = ${esc(symbol)} ORDER BY date DESC LIMIT ${limit}`,
+     WHERE symbol = ${esc(symbol)} ORDER BY date DESC${tail}`,
   );
   return rows
     .map((r) => ({
@@ -108,10 +110,12 @@ export async function upsertIndicators(symbol: string, s: IndicatorSeries): Prom
   );
 }
 
+/** limit <= 0 表示取全部 */
 export async function getIndicators(symbol: string, limit = 640): Promise<Record<string, unknown>[]> {
+  const tail = limit > 0 ? ` LIMIT ${Math.floor(limit)}` : '';
   return query(
     `SELECT * FROM indicator_daily WHERE symbol = ${esc(symbol)}
-     ORDER BY date DESC LIMIT ${limit}`,
+     ORDER BY date DESC${tail}`,
   );
 }
 

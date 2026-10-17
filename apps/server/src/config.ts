@@ -21,5 +21,11 @@ export const RANK_INTERVAL = 60_000;
 /** 腾讯单批最大股票数 */
 export const BATCH_SIZE = 60;
 
-/** 日 K 拉取的默认根数 */
+/** 日 K 拉取的兜底根数（腾讯单次上限就是 640） */
 export const DAILY_BARS = 640;
+
+/** 单个接口最多返回的 K 线根数；0 表示不限量 */
+export const FULL_HISTORY = 20000;
+
+/** /api/kline 与 /api/indicators 允许的最大 limit */
+export const MAX_BARS = 20000;
