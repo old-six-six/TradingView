@@ -87,6 +87,18 @@ export default function App() {
     api.detail(selected).catch(() => undefined);
   }, [selected]);
 
+  /**
+   * 地址栏始终跟随当前股票：切换入口有自选列表、板块弹窗、上下键三种，
+   * 之前只有从市场列表点进来会写 URL，其余路径刷新后会跳回上一只票。
+   */
+  useEffect(() => {
+    if (!selected) return;
+    const url = new URL(location.href);
+    if (url.searchParams.get('symbol') === selected) return;
+    url.searchParams.set('symbol', selected);
+    history.replaceState(null, '', url);
+  }, [selected]);
+
   const move = useCallback(
     (dir: 1 | -1) => {
       const list = itemsRef.current;

@@ -171,11 +171,16 @@ export default function ChartPane() {
   const barsRef = useRef<Bar[]>([]);
   const indRef = useRef<IndicatorSeries | null>(null);
   const timeIdxRef = useRef<Map<number, number>>(new Map());
-  /** 记住当前视图范围，重绘（切均线、切副图）时据此还原，不跳回最新 */
-  const viewRef = useRef<{ key: string; range: { from: number; to: number } | null }>({
-    key: '',
-    range: null,
-  });
+  /**
+   * 记住当前视图范围，重绘（切均线、切副图）时据此还原，不跳回最新。
+   * `bars` 存的是渲染时的数据引用：切股票/切周期时数据换了引用，即便
+   * 逻辑坐标还在范围内也不能沿用旧视野，否则会停在上一只票那段历史上。
+   */
+  const viewRef = useRef<{
+    key: string;
+    bars: Bar[] | null;
+    range: { from: number; to: number } | null;
+  }>({ key: '', bars: null, range: null });
 
   /** 副图指标列表：索引即副图序号，长度即副图个数 */
   const [subPanes, setSubPanes] = useState<SubIndicator[]>(loadSubPanes);
@@ -515,6 +520,11 @@ export default function ChartPane() {
     setLoading(true);
     setError('');
     setHoverIdx(null);
+    // 换票先清空：否则加载期间画布上还挂着上一只票的 K 线，
+    // 图例/图头却已经是新票，看起来像「切了但没切」
+    setBars([]);
+    setInd(null);
+    setMinute(null);
 
     const load = async () => {
       try {
@@ -569,7 +579,11 @@ export default function ChartPane() {
     if (!chart) return;
     // 必须在清空序列之前取：setData 期间图表会回调可见范围，把记录值冲掉
     const viewKey = `${selected}|${period}`;
-    const savedRange = viewRef.current.key === viewKey ? viewRef.current.range : null;
+    // 只有「同一只票、同一周期、同一份数据」的重绘才还原视野
+    const savedRange =
+      viewRef.current.key === viewKey && viewRef.current.bars === bars
+        ? viewRef.current.range
+        : null;
     clearSeries();
     if (!selected) return;
 
@@ -605,6 +619,7 @@ export default function ChartPane() {
         }
       }
       viewRef.current.key = viewKey;
+      viewRef.current.bars = bars;
     }, 0);
   }, [bars, ind, minute, period, subPanes, selected, maVisible, mainKind]);
 
