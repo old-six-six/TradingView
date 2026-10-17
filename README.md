@@ -4,9 +4,9 @@ Mac M1 上的个人 A 股看盘终端。单仓两应用：
 
 | 目录 | 说明 |
 |---|---|
-| `apps/server` | Fastify + DuckDB，负责行情采集、指标计算、REST/WS 服务 |
+| `apps/server` | Fastify + `node:sqlite`，负责行情采集、指标计算、REST/WS 服务 |
 | `apps/web` | Vite + React + lightweight-charts v5，负责界面 |
-| `data/` | DuckDB 数据文件（不入库） |
+| `data/tv.db` | SQLite 数据文件（不入库） |
 
 ## 启动
 
@@ -20,7 +20,7 @@ npm run dev
 
 首次启动会自动写入 6 只默认自选、拉取全市场股票列表、同步日 K 并计算指标，约 30–60 秒。
 
-单独跑：
+单独跑（推荐开两个终端，日志不混）：
 
 ```bash
 npm run dev:server
@@ -28,9 +28,11 @@ npm run dev:web
 npm run init:data            # 手动初始化：股票列表 + 自选 + 日K + 指标
 ```
 
+> 脚本内部直接 `node <入口文件>`，不依赖 `node_modules/.bin`。若 `npm run` 报找不到模块，先确认根目录 `npm install` 已跑完。
+
 ## 已实现（P0–P2）
 
-- **P0** 工程骨架、DuckDB 建表、腾讯行情适配器、日 K 落库、K 线渲染
+- **P0** 工程骨架、建表、腾讯行情适配器、日 K 落库、K 线渲染
 - **P1** 3 秒实时轮询、WebSocket 推送、自选列表红绿跳动、五档盘口、分时图
 - **P2** 指标引擎（MA/BOLL/MACD/KDJ/RSI/ATR/OBV）、多周期切换、副图、指标落库
 
@@ -47,8 +49,8 @@ npm run init:data            # 手动初始化：股票列表 + 自选 + 日K + 
 
 | 源 | 用途 | 状态 |
 |---|---|---|
-| 腾讯 `qt.gtimg.cn` | 实时快照 + 五档 | 主源，3 秒轮询 |
-| 腾讯 `fqkline` | 日/周/月 K（前复权） | 主源 |
+| 腾讯 `qt.gtimg.cn` | 实时快照 + 五档 | 主源，3 秒轮询；必须带 UA + https |
+| 腾讯 `fqkline` | 日/周/月 K（前复权） | 主源，返回列序是开-收-高-低 |
 | 腾讯 `minute/query` | 当日 1 分钟分时 | 本地聚合出分钟 K |
 | 新浪 `Market_Center` | 全市场列表（100 只/页） | 用于搜索与排行 |
 | 东方财富 `push2` | — | 已失效，未接入 |
@@ -59,3 +61,28 @@ npm run init:data            # 手动初始化：股票列表 + 自选 + 日K + 
 - **历史分钟数据为空**：免费源只提供当日分时，分钟 K 由当日数据聚合，历史需自行积累。
 - **接口无 SLA**：连续失败 5 次触发 60 秒熔断，降级到本地缓存并在界面标记「数据延迟」。
 - **非交易日**：轮询自动降频到 30 秒一次，界面显示的是最近收盘数据。
+
+## 环境相关的两处取舍
+
+1. **存储用 `node:sqlite` 而非 DuckDB**：`@duckdb/node-api` 的 darwin-arm64 包在本机装不上（原生库损坏且无法替换）。SQLite 是 Node 22 内置，零依赖，当前数据量下性能足够。
+2. **SQLite 跑 `journal_mode = MEMORY`**：本机沙箱禁止创建 WAL/journal 文件，否则报 `disk I/O error`。代价是进程崩溃可能丢最后一次写入，行情可重拉。
+
+## API
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/health` | 健康检查、数据源状态、熔断标记 |
+| `GET /api/quote?symbols=a,b` | 实时行情（含五档） |
+| `GET /api/kline?symbol=&period=&limit=` | K 线，period 支持 day/week/month/m1/m5/m15/m30/m60 |
+| `GET /api/minute?symbol=` | 当日分时 |
+| `GET /api/indicators?symbol=&limit=` | 指标序列 |
+| `GET /api/rank?sort=changePct&dir=desc&limit=50` | 全市场排行（变动率/成交额/换手等） |
+| `GET /api/search?q=` | 代码或名称模糊搜索，最多 20 条 |
+| `GET /api/watchlist` | 自选列表（含实时行情） |
+| `POST /api/watchlist` | 添加自选，body `{ symbol }` |
+| `DELETE /api/watchlist/:symbol` | 移除自选 |
+| `GET /api/positions` | 持仓列表（含浮动盈亏） |
+| `POST /api/positions` | 新增持仓，body `{ symbol, shares, cost }` |
+| `DELETE /api/positions/:id` | 删除持仓 |
+| `POST /api/detail` | 切换当前详情报价票，body `{ symbol }` |
+| `WS /ws` | 连接即推 snapshot，之后按 3 秒推 quote |
