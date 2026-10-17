@@ -71,32 +71,32 @@ const MA_COLORS = ['#c98a12', '#1f6feb', '#8b5cf6', '#6b7280'];
 const MA_LABELS = ['MA5', 'MA10', 'MA20', 'MA60'] as const;
 const MA_STORE_KEY = 'tv.maVisible';
 
-/** 主图可选指标：均线组与布林带，两者互不排斥 */
+/** 主图指标为单选：同一时间只挂一个，剩下的位置留给 K 线 */
 const MAIN_INDICATORS = ['MA', 'BOLL'] as const;
 type MainIndicator = (typeof MAIN_INDICATORS)[number];
+/** null 表示主图不显示任何指标，只留 K 线与成交量 */
+type MainKind = MainIndicator | null;
 const MAIN_LABELS: Record<MainIndicator, string> = { MA: '均线', BOLL: 'BOLL' };
 const MAIN_STORE_KEY = 'tv.mainInd';
 /** 布林带取洋红/青，和四条均线的金蓝紫灰拉开距离 */
 const BOLL_COLORS = ['#e11d8f', '#0d9488', '#e11d8f'];
 
-type MainVisible = Record<MainIndicator, boolean>;
-
-function loadMainVisible(): MainVisible {
-  const def: MainVisible = { MA: true, BOLL: false };
+function loadMainKind(): MainKind {
   try {
     const raw = localStorage.getItem(MAIN_STORE_KEY);
-    if (raw) {
-      const o = JSON.parse(raw);
-      if (o && typeof o === 'object') {
-        for (const k of MAIN_INDICATORS) {
-          if (typeof o[k] === 'boolean') def[k] = o[k];
-        }
-      }
+    if (raw === null) return 'MA';
+    const v = JSON.parse(raw);
+    if (v === null || v === 'MA' || v === 'BOLL') return v as MainKind;
+    // 兼容旧版多选格式 { MA: boolean, BOLL: boolean }
+    if (v && typeof v === 'object') {
+      if (v.BOLL) return 'BOLL';
+      if (v.MA) return 'MA';
+      return null;
     }
   } catch {
     /* 忽略损坏的本地配置 */
   }
-  return def;
+  return 'MA';
 }
 
 function loadMaVisible(): boolean[] {
@@ -182,8 +182,8 @@ export default function ChartPane() {
   const indPopRef = useRef<HTMLSpanElement>(null);
   /** 四条均线的显示开关，顺序对应 MA5/10/20/60 */
   const [maVisible, setMaVisible] = useState<boolean[]>(loadMaVisible);
-  /** 主图指标开关（均线 / 布林带） */
-  const [mainInd, setMainInd] = useState<MainVisible>(loadMainVisible);
+  /** 主图指标：单选，null = 不显示 */
+  const [mainKind, setMainKind] = useState<MainKind>(loadMainKind);
   const [mainOpen, setMainOpen] = useState(false);
   const mainPopRef = useRef<HTMLSpanElement>(null);
   const [loading, setLoading] = useState(false);
@@ -212,11 +212,11 @@ export default function ChartPane() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(MAIN_STORE_KEY, JSON.stringify(mainInd));
+      localStorage.setItem(MAIN_STORE_KEY, JSON.stringify(mainKind));
     } catch {
       /* 忽略隐私模式下的写入失败 */
     }
-  }, [mainInd]);
+  }, [mainKind]);
 
   useEffect(() => {
     try {
@@ -284,8 +284,8 @@ export default function ChartPane() {
     });
   const maAllOff = !maVisible.some(Boolean);
 
-  /** 主图指标开关（均线组 / 布林带） */
-  const toggleMain = (k: MainIndicator) => setMainInd((prev) => ({ ...prev, [k]: !prev[k] }));
+  /** 选一个主图指标；再点一次同一个等于关掉（主图只留 K 线） */
+  const pickMain = (k: MainIndicator) => setMainKind((prev) => (prev === k ? null : k));
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -523,7 +523,7 @@ export default function ChartPane() {
     if (period === 'minute' && minute) {
       renderMinute(chart, minute);
     } else if (bars.length) {
-      renderKline(chart, bars, ind, { ma: maVisible, boll: !!mainInd.BOLL });
+      renderKline(chart, bars, ind, { kind: mainKind, ma: maVisible });
     }
 
     window.setTimeout(() => {
@@ -543,7 +543,7 @@ export default function ChartPane() {
       }
       viewRef.current.key = viewKey;
     }, 0);
-  }, [bars, ind, minute, period, subPanes, selected, maVisible, mainInd]);
+  }, [bars, ind, minute, period, subPanes, selected, maVisible, mainKind]);
 
   /** 光标所在 bar（无光标时取最后一根），供图例显示 */
   const legend = useMemo(() => {
@@ -723,7 +723,7 @@ export default function ChartPane() {
     chart: IChartApi,
     list: Bar[],
     indicators: IndicatorSeries | null,
-    main: { ma: boolean[]; boll: boolean },
+    main: { kind: MainKind; ma: boolean[] },
   ) {
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: UP,
@@ -773,14 +773,13 @@ export default function ChartPane() {
         seriesRef.current.push(s);
         return s;
       };
-      const maSeries = [indicators.ma5, indicators.ma10, indicators.ma20, indicators.ma60];
-      if (main.ma) {
+      if (main.kind === 'MA') {
+        const maSeries = [indicators.ma5, indicators.ma10, indicators.ma20, indicators.ma60];
         maSeries.forEach((vals, i) => {
           if (main.ma[i]) line(vals, MA_COLORS[i]);
         });
-      }
-      if (main.boll) {
-        // 上轨/中轨/下轨：中轨即 20 日均线，故不依赖均线开关单独可显
+      } else if (main.kind === 'BOLL') {
+        // 上轨/中轨/下轨；中轨即 20 日均线，故关掉均线也能单独显示
         line(indicators.bollUp, BOLL_COLORS[0]);
         line(indicators.bollMid, BOLL_COLORS[1]);
         line(indicators.bollDn, BOLL_COLORS[2]);
@@ -868,8 +867,8 @@ export default function ChartPane() {
   }
 
   const isMinute = period === 'minute';
-  const showMa = !isMinute && !!legend && mainInd.MA;
-  const showBoll = !isMinute && !!legend && mainInd.BOLL;
+  const showMa = !isMinute && !!legend && mainKind === 'MA';
+  const showBoll = !isMinute && !!legend && mainKind === 'BOLL';
 
   return (
     <div className="chart-col">
@@ -933,7 +932,7 @@ export default function ChartPane() {
               }}
               title="主图指标设置"
             >
-              主图
+              主图 {mainKind ? MAIN_LABELS[mainKind] : '无'}
               <i className="caret">{mainOpen ? '▴' : '▾'}</i>
             </span>
             {mainOpen && (
@@ -944,13 +943,20 @@ export default function ChartPane() {
                     {MAIN_INDICATORS.map((k) => (
                       <button
                         key={k}
-                        className={mainInd[k] ? 'on' : ''}
-                        onClick={() => toggleMain(k)}
-                        title={`${mainInd[k] ? '隐藏' : '显示'}${MAIN_LABELS[k]}`}
+                        className={mainKind === k ? 'on' : ''}
+                        onClick={() => pickMain(k)}
+                        title={mainKind === k ? `关闭${MAIN_LABELS[k]}` : `主图只显示${MAIN_LABELS[k]}`}
                       >
                         {MAIN_LABELS[k]}
                       </button>
                     ))}
+                    <button
+                      className={mainKind === null ? 'on' : ''}
+                      onClick={() => setMainKind(null)}
+                      title="主图只留 K 线与成交量"
+                    >
+                      无
+                    </button>
                   </div>
                 </div>
                 <div className="ind-pop-row">
@@ -960,7 +966,7 @@ export default function ChartPane() {
                       <button
                         key={label}
                         className={maVisible[i] ? 'on' : ''}
-                        disabled={!mainInd.MA}
+                        disabled={mainKind !== 'MA'}
                         onClick={() => toggleMa(i)}
                         title={`${maVisible[i] ? '隐藏' : '显示'} ${label}`}
                       >
@@ -970,10 +976,12 @@ export default function ChartPane() {
                   </div>
                 </div>
                 <div className="ind-pop-tip">
-                  {mainInd.MA ? (
+                  {mainKind === 'MA' ? (
                     <span className="ind-link" onClick={toggleAllMa}>
                       均线{maAllOff ? '全开' : '全关'}
                     </span>
+                  ) : mainKind === 'BOLL' ? (
+                    '布林带 (20, 2)，中轨即 MA20'
                   ) : (
                     '主图只留 K 线与成交量'
                   )}
