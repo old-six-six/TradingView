@@ -17,7 +17,10 @@ export function setWatchProvider(fn: () => Promise<string[]>) {
 }
 
 export function setDetail(symbol: string | null) {
+  if (detailSymbol === symbol) return;
   detailSymbol = symbol;
+  // 切票后立刻取一次，休市时也能马上有价格与盘口
+  void pollDetail();
 }
 
 export function lastSnapshot(): Quote[] {
@@ -69,6 +72,8 @@ export function startPoller() {
       pollDetail();
       if (tick % interval === 0) pollWatch();
     } else if (tick % 30 === 0) {
+      // 非交易时段也要维护当前详情的快照，否则从列表点进陌生股票会没有价格
+      pollDetail();
       pollWatch();
     }
   }, 1000);

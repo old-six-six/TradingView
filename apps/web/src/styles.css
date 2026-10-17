@@ -139,6 +139,25 @@ button {
   overflow: hidden;
 }
 
+/* 指数可点：跳到对应市场的全量列表 */
+.idx-item {
+  cursor: pointer;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.idx-item:hover {
+  background: var(--bg-hover);
+}
+
+.idx-item.on {
+  background: var(--bg-hover);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
 .status-dot {
   width: 6px;
   height: 6px;
@@ -905,4 +924,140 @@ button {
   color: var(--text-3);
   font-size: 12px;
   line-height: 1.8;
+}
+
+/* ---------- 全市场列表页 ---------- */
+.mk-page {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mk-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.mk-back {
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.mk-back:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.mk-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mk-tabs {
+  display: flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.mk-meta {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.mk-meta b {
+  font-weight: 500;
+}
+
+.mk-time {
+  color: var(--text-3);
+}
+
+/* 表格容器：纵向 + 横向滚动都在这一个盒子里 */
+.mk-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.mk-inner {
+  position: relative;
+}
+
+.mk-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.mk-th {
+  padding: 0 6px;
+  line-height: 26px;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mk-th.r {
+  text-align: right;
+}
+
+.mk-th:hover {
+  color: var(--text);
+}
+
+.mk-th.on {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.mk-th i {
+  font-style: normal;
+  margin-left: 2px;
+}
+
+.mk-row {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  border-bottom: 1px solid #f4f5f7;
+  cursor: pointer;
+}
+
+.mk-row:hover {
+  background: var(--bg-hover);
+}
+
+.mk-td {
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mk-td.r {
+  text-align: right;
+}
+
+.mk-td.dim {
+  color: var(--text-3);
 }

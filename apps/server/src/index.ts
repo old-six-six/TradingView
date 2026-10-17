@@ -16,6 +16,7 @@ import { setupWs } from './routes/ws.js';
 import { setWatchProvider, startPoller } from './service/poller.js';
 import { syncMany } from './service/sync.js';
 import { ensureBoardIndex } from './service/boardSync.js';
+import { pruneSamples } from './service/marketList.js';
 import { fetchStocks, fetchAllMarket } from './sources/sina.js';
 import { toSymbol } from './sources/tencent.js';
 
@@ -101,6 +102,9 @@ async function bootstrap() {
 
   // 板块反向索引：超过 12 小时才重建，首次约 3–5 分钟，后台跑不挡启动
   void ensureBoardIndex();
+
+  // 列表页的涨速样本与现手基线：定期清掉长时间没被访问的票
+  setInterval(pruneSamples, 5 * 60 * 1000);
 }
 
 main().catch((e) => {

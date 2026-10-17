@@ -5,10 +5,12 @@ import TopBar from './components/TopBar';
 import WatchList from './components/WatchList';
 import ChartPane from './components/ChartPane';
 import OrderBook from './components/OrderBook';
+import MarketPage from './components/MarketPage';
 import StatusBar from './components/StatusBar';
 
 export default function App() {
-  const { items, selected, setItems, mergeQuotes, setConnected, select } = useStore();
+  const { items, selected, setItems, mergeQuotes, setConnected, select, market, setMarket } =
+    useStore();
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<number>(0);
   const itemsRef = useRef(items);
@@ -20,7 +22,9 @@ export default function App() {
     const params = new URLSearchParams(location.search);
     const p = params.get('period');
     const s = params.get('symbol');
+    const b = params.get('board');
     if (p) useStore.getState().setPeriod(p);
+    if (b) setMarket(b);
     if (s) select(s);
     api
       .watchlist()
@@ -30,7 +34,7 @@ export default function App() {
         if (first) select(first);
       })
       .catch(() => undefined);
-  }, [setItems, select]);
+  }, [setItems, select, setMarket]);
 
   useEffect(() => {
     let closed = false;
@@ -113,9 +117,15 @@ export default function App() {
     <div className="app">
       <TopBar />
       <div className="main">
-        <WatchList />
-        <ChartPane />
-        <OrderBook />
+        {market ? (
+          <MarketPage board={market} />
+        ) : (
+          <>
+            <WatchList />
+            <ChartPane />
+            <OrderBook />
+          </>
+        )}
       </div>
       <StatusBar />
     </div>

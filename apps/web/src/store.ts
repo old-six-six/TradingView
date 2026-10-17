@@ -6,6 +6,8 @@ interface State {
   quotes: Record<string, Quote>;
   selected: string;
   period: string;
+  /** 全市场列表页：null 表示看图表 */
+  market: string | null;
   stale: boolean;
   connected: boolean;
   lastTs: number;
@@ -13,6 +15,7 @@ interface State {
   mergeQuotes: (quotes: Quote[], stale?: boolean) => void;
   select: (symbol: string) => void;
   setPeriod: (p: string) => void;
+  setMarket: (m: string | null) => void;
   setConnected: (v: boolean) => void;
 }
 
@@ -21,6 +24,7 @@ export const useStore = create<State>((set) => ({
   quotes: {},
   selected: '',
   period: 'day',
+  market: null,
   stale: false,
   connected: false,
   lastTs: 0,
@@ -34,5 +38,6 @@ export const useStore = create<State>((set) => ({
     }),
   select: (symbol) => set({ selected: symbol }),
   setPeriod: (period) => set({ period }),
+  setMarket: (market) => set({ market }),
   setConnected: (connected) => set({ connected }),
 }));

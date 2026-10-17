@@ -31,6 +31,7 @@ import {
   boardIndexCount,
   boardSyncState,
 } from '../service/boardSync.js';
+import { marketRows, isMarketKey, MARKETS } from '../service/marketList.js';
 import { MAX_BARS, FULL_HISTORY } from '../config.js';
 import type { IndicatorSeries, Bar } from '../types.js';
 
@@ -343,6 +344,15 @@ export async function apiRoutes(app: FastifyInstance) {
     const k = (['gn', 'hy', 'dy'].includes(kind) ? kind : info.kind || 'gn') as BoardKind;
     const items = await fetchBoardStocks(c, k, 800);
     return { code: c, name: info.name, kind: k, items };
+  });
+  /** 全市场列表：上证主板 / 深证主板 / 创业板 / 科创板 / 北交所 */
+  app.get('/api/market/list', async (req) => {
+    const { board = '' } = req.query as Record<string, string>;
+    if (!isMarketKey(board)) {
+      return { board, label: '', updatedAt: 0, cached: false, rows: [], error: 'unknown board' };
+    }
+    const { rows, at, cached } = await marketRows(board);
+    return { board, label: MARKETS[board].label, updatedAt: at, cached, rows };
   });
 }
 

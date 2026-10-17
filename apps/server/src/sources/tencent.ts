@@ -58,13 +58,78 @@ function fmtTime(raw: string): string {
 
 /**
  * 腾讯实时快照。字段以 ~ 分隔，索引含义见 docs。
- * 单次建议不超过 60 只。
+ * 单次建议不超过 400 只（更长的 URL 会被 414 拒绝）。
  */
 export async function fetchQuotes(symbols: string[]): Promise<Quote[]> {
+  const snaps = await fetchSnapshots(symbols);
+  return snaps.map((s) => ({
+    symbol: s.symbol,
+    name: s.name,
+    code: s.code,
+    price: s.price,
+    prevClose: s.prevClose,
+    open: s.open,
+    high: s.high,
+    low: s.low,
+    change: s.change,
+    changePct: s.changePct,
+    volume: s.volume,
+    amount: s.amount,
+    turnoverRate: s.turnoverRate,
+    pe: s.pe,
+    pb: s.pb,
+    amplitude: s.amplitude,
+    marketCap: s.marketCap,
+    floatCap: s.floatCap,
+    volumeRatio: s.volumeRatio,
+    avgPrice: s.avgPrice,
+    limitUp: s.limitUp,
+    limitDown: s.limitDown,
+    bids: s.bids,
+    asks: s.asks,
+    time: s.time,
+  }));
+}
+
+/** 快照的全部字段，列表页要用的外盘/内盘/委差等只在这里出现 */
+export interface Snapshot extends Quote {
+  /** 外盘（手） */
+  outerVolume: number;
+  /** 内盘（手） */
+  innerVolume: number;
+  /** 五档买量合计（手） */
+  bidVolume: number;
+  /** 五档卖量合计（手） */
+  askVolume: number;
+  /** 委差（手），腾讯直接给 */
+  weicha: number;
+  /** 动态市盈率 */
+  peDyn: number | null;
+  /** 静态市盈率 */
+  peStatic: number | null;
+}
+
+/** 批量抓原始快照；内部按 400 只切块并发 */
+export async function fetchSnapshots(symbols: string[], chunk = 400): Promise<Snapshot[]> {
   if (!symbols.length) return [];
+  const groups: string[][] = [];
+  for (let i = 0; i < symbols.length; i += chunk) groups.push(symbols.slice(i, i + chunk));
+  const pages = await Promise.all(
+    groups.map(async (g) => {
+      try {
+        return await fetchSnapshotChunk(g);
+      } catch {
+        return [] as Snapshot[];
+      }
+    }),
+  );
+  return pages.flat();
+}
+
+async function fetchSnapshotChunk(symbols: string[]): Promise<Snapshot[]> {
   const url = `https://qt.gtimg.cn/q=${symbols.join(',')}`;
   const text = await getText(url, true);
-  const out: Quote[] = [];
+  const out: Snapshot[] = [];
   const re = /v_(\w+)="([^"]*)"/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
@@ -73,6 +138,8 @@ export async function fetchQuotes(symbols: string[]): Promise<Quote[]> {
     if (f.length < 50 || !f[3]) continue;
     const price = Number(f[3]);
     if (!Number.isFinite(price) || price === 0) continue;
+    const bids = toLevels(f, 9);
+    const asks = toLevels(f, 19);
     out.push({
       symbol,
       name: f[1] ?? '',
@@ -96,8 +163,15 @@ export async function fetchQuotes(symbols: string[]): Promise<Quote[]> {
       avgPrice: Number(f[51]) || price,
       limitUp: Number(f[47]) || 0,
       limitDown: Number(f[48]) || 0,
-      bids: toLevels(f, 9),
-      asks: toLevels(f, 19),
+      outerVolume: Number(f[7]) || 0,
+      innerVolume: Number(f[8]) || 0,
+      bidVolume: bids.reduce((s, l) => s + l.volume, 0),
+      askVolume: asks.reduce((s, l) => s + l.volume, 0),
+      weicha: Number(f[50]) || 0,
+      peDyn: Number(f[52]) || null,
+      peStatic: Number(f[53]) || null,
+      bids,
+      asks,
       time: fmtTime(f[30] ?? ''),
     });
   }

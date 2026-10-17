@@ -4,15 +4,15 @@ import { useStore } from '../store';
 import { cls, fmtNum, fmtPct } from '../fmt';
 
 const INDEXES = [
-  { symbol: 'sh000001', label: '上证' },
-  { symbol: 'sz399001', label: '深证' },
-  { symbol: 'sz399006', label: '创业板' },
-  { symbol: 'sh000688', label: '科创50' },
-  { symbol: 'bj899050', label: '北证50' },
+  { symbol: 'sh000001', label: '上证', market: 'sh_main', full: '上证主板' },
+  { symbol: 'sz399001', label: '深证', market: 'sz_main', full: '深证主板' },
+  { symbol: 'sz399006', label: '创业板', market: 'cyb', full: '创业板' },
+  { symbol: 'sh000688', label: '科创50', market: 'kcb', full: '科创板' },
+  { symbol: 'bj899050', label: '北证50', market: 'bj', full: '北交所' },
 ];
 
 export default function TopBar() {
-  const { connected, stale, items, setItems, select } = useStore();
+  const { connected, stale, items, setItems, select, market, setMarket } = useStore();
   const [idx, setIdx] = useState<Record<string, Quote>>({});
   const [kw, setKw] = useState('');
   const [results, setResults] = useState<Array<{ symbol: string; code: string; name: string }>>([]);
@@ -108,7 +108,17 @@ export default function TopBar() {
         {INDEXES.map((i) => {
           const q = idx[i.symbol];
           return (
-            <span key={i.symbol}>
+            <span
+              key={i.symbol}
+              className={`idx-item${market === i.market ? ' on' : ''}`}
+              onClick={() => {
+                setMarket(i.market);
+                const url = new URL(location.href);
+                url.searchParams.set('board', i.market);
+                history.replaceState(null, '', url);
+              }}
+              title={`查看${i.full}全部股票`}
+            >
               {i.label}{' '}
               <span className={`num ${cls(q?.changePct)}`}>
                 {q ? fmtNum(q.price, 2) : '--'} {q ? fmtPct(q.changePct) : ''}

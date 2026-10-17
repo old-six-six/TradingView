@@ -105,6 +105,40 @@ export interface BoardStock {
   pb: number | null;
 }
 
+/** 全市场列表行，字段见 service/marketList.ts */
+export interface MarketRow {
+  symbol: string;
+  code: string;
+  name: string;
+  price: number;
+  changePct: number;
+  change: number;
+  turnoverRate: number;
+  volumeRatio: number;
+  speed: number | null;
+  amount: number;
+  volume: number;
+  nowVolume: number;
+  high: number;
+  low: number;
+  industry: string;
+  pe: number | null;
+  peDyn: number | null;
+  pb: number | null;
+  floatCap: number;
+  marketCap: number;
+  outer: number;
+  inner: number;
+  prevClose: number;
+  open: number;
+  bidPrice: number;
+  askPrice: number;
+  avgPrice: number;
+  weibi: number;
+  weicha: number;
+  time: string;
+}
+
 const BASE = '';
 
 async function get<T>(url: string): Promise<T> {
@@ -173,4 +207,12 @@ export const api = {
     get<{ code: string; name: string; kind: BoardKind; items: BoardStock[] }>(
       `/api/board/stocks?code=${code}${kind ? `&kind=${kind}` : ''}`,
     ),
+  marketList: (board: string) =>
+    get<{
+      board: string;
+      label: string;
+      updatedAt: number;
+      cached: boolean;
+      rows: MarketRow[];
+    }>(`/api/market/list?board=${board}`),
 };
