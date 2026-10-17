@@ -1,5 +1,5 @@
 import { useStore } from '../store';
-import { cls, fmtAmount, fmtNum, fmtPct, fmtVolume } from '../fmt';
+import { cls, fmtNum, fmtPct } from '../fmt';
 
 export default function OrderBook() {
   const { quotes, selected, items } = useStore();
@@ -59,62 +59,6 @@ export default function OrderBook() {
             <span className="num">{b.volume.toFixed(0)}</span>
           </div>
         ))}
-      </div>
-
-      <div className="section-title">关键数据</div>
-      <div style={{ padding: '8px 12px' }}>
-        <div className="kv">
-          <span>今开</span>
-          <span className={`num ${cls(q.open - q.prevClose)}`}>{fmtNum(q.open)}</span>
-        </div>
-        <div className="kv">
-          <span>昨收</span>
-          <span className="num">{fmtNum(q.prevClose)}</span>
-        </div>
-        <div className="kv">
-          <span>最高</span>
-          <span className={`num ${cls(q.high - q.prevClose)}`}>{fmtNum(q.high)}</span>
-        </div>
-        <div className="kv">
-          <span>最低</span>
-          <span className={`num ${cls(q.low - q.prevClose)}`}>{fmtNum(q.low)}</span>
-        </div>
-        <div className="kv">
-          <span>成交量</span>
-          <span className="num">{fmtVolume(q.volume)}</span>
-        </div>
-        <div className="kv">
-          <span>成交额</span>
-          <span className="num">{fmtAmount(q.amount)}</span>
-        </div>
-        <div className="kv">
-          <span>换手率</span>
-          <span className="num">{fmtNum(q.turnoverRate)}%</span>
-        </div>
-        <div className="kv">
-          <span>量比</span>
-          <span className="num">{fmtNum(q.volumeRatio)}</span>
-        </div>
-        <div className="kv">
-          <span>振幅</span>
-          <span className="num">{fmtNum(q.amplitude)}%</span>
-        </div>
-        <div className="kv">
-          <span>市盈率</span>
-          <span className="num">{q.pe ? fmtNum(q.pe) : '--'}</span>
-        </div>
-        <div className="kv">
-          <span>市净率</span>
-          <span className="num">{q.pb ? fmtNum(q.pb) : '--'}</span>
-        </div>
-        <div className="kv">
-          <span>总市值</span>
-          <span className="num">{fmtAmount(q.marketCap)}</span>
-        </div>
-        <div className="kv">
-          <span>流通市值</span>
-          <span className="num">{fmtAmount(q.floatCap)}</span>
-        </div>
       </div>
 
       <div className="section-title">三三卖点档位</div>

@@ -929,14 +929,88 @@ export default function ChartPane() {
     <div className="chart-col">
       <div className="quote-head">
         <div className="quote-title">
-          <span className="quote-name">{name || '--'}</span>
-          <span className="quote-code">{selected ? selected.slice(2) : ''}</span>
-          <span className={`quote-price num ${cls(q?.changePct)}`}>
-            {q ? fmtNum(q.price) : '--'}
-          </span>
-          <span className={`quote-chg num ${cls(q?.changePct)}`}>
-            {q ? `${q.change > 0 ? '+' : ''}${fmtNum(q.change)} ${fmtPct(q.changePct)}` : ''}
-          </span>
+          <div className="quote-id">
+            <span className="quote-name">{name || '--'}</span>
+            <span className="quote-code">{selected ? selected.slice(2) : ''}</span>
+            <span className={`quote-price num ${cls(q?.changePct)}`}>
+              {q ? fmtNum(q.price) : '--'}
+            </span>
+            <span className={`quote-chg num ${cls(q?.changePct)}`}>
+              {q ? `${q.change > 0 ? '+' : ''}${fmtNum(q.change)} ${fmtPct(q.changePct)}` : ''}
+            </span>
+          </div>
+          {q && (
+            <div className="quote-stats">
+              <div className="qs-row">
+                <span className="qs">
+                  <i>今开</i>
+                  <b className={`num ${cls(q.open - q.prevClose)}`}>{fmtNum(q.open)}</b>
+                </span>
+                <span className="qs">
+                  <i>昨收</i>
+                  <b className="num">{fmtNum(q.prevClose)}</b>
+                </span>
+                <span className="qs">
+                  <i>最高</i>
+                  <b className={`num ${cls(q.high - q.prevClose)}`}>{fmtNum(q.high)}</b>
+                </span>
+                <span className="qs">
+                  <i>最低</i>
+                  <b className={`num ${cls(q.low - q.prevClose)}`}>{fmtNum(q.low)}</b>
+                </span>
+                <span className="qs">
+                  <i>涨停</i>
+                  <b className="num up">{fmtNum(q.limitUp)}</b>
+                </span>
+                <span className="qs">
+                  <i>跌停</i>
+                  <b className="num down">{fmtNum(q.limitDown)}</b>
+                </span>
+                <span className="qs">
+                  <i>成交量</i>
+                  <b className="num">{fmtVolume(q.volume)}</b>
+                </span>
+                <span className="qs">
+                  <i>成交额</i>
+                  <b className="num">{fmtAmount(q.amount)}</b>
+                </span>
+              </div>
+              <div className="qs-row">
+                <span className="qs">
+                  <i>换手</i>
+                  <b className="num">{fmtNum(q.turnoverRate)}%</b>
+                </span>
+                <span className="qs">
+                  <i>量比</i>
+                  <b className="num">{fmtNum(q.volumeRatio)}</b>
+                </span>
+                <span className="qs">
+                  <i>振幅</i>
+                  <b className="num">{fmtNum(q.amplitude)}%</b>
+                </span>
+                <span className="qs">
+                  <i>均价</i>
+                  <b className="num">{fmtNum(q.avgPrice)}</b>
+                </span>
+                <span className="qs">
+                  <i>市盈</i>
+                  <b className="num">{q.pe ? fmtNum(q.pe) : '--'}</b>
+                </span>
+                <span className="qs">
+                  <i>市净</i>
+                  <b className="num">{q.pb ? fmtNum(q.pb) : '--'}</b>
+                </span>
+                <span className="qs">
+                  <i>总市值</i>
+                  <b className="num">{fmtAmount(q.marketCap)}</b>
+                </span>
+                <span className="qs">
+                  <i>流通值</i>
+                  <b className="num">{fmtAmount(q.floatCap)}</b>
+                </span>
+              </div>
+            </div>
+          )}
         </div>
         <div className="board-row">
           {boards.length > 0 && industryBoards.length > 0 && (
