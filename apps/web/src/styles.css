@@ -351,6 +351,23 @@ button {
   gap: 8px;
 }
 
+/* 均线只做显示开关，不参与点位操作，故单独放开指针事件 */
+.chart-legend .ma-item {
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.chart-legend .ma-item:hover {
+  text-decoration: underline;
+}
+
+.chart-legend .ma-item.off {
+  color: var(--text-3);
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+
 /* ---------- 右侧盘口 ---------- */
 .rightbar {
   width: 208px;

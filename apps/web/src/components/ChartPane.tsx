@@ -45,6 +45,21 @@ const UP_SOFT = 'rgba(217,48,38,0.55)';
 const DOWN_SOFT = 'rgba(18,137,79,0.55)';
 
 const MA_COLORS = ['#c98a12', '#1f6feb', '#8b5cf6', '#6b7280'];
+const MA_LABELS = ['MA5', 'MA10', 'MA20', 'MA60'] as const;
+const MA_STORE_KEY = 'tv.maVisible';
+
+function loadMaVisible(): boolean[] {
+  try {
+    const raw = localStorage.getItem(MA_STORE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length === MA_LABELS.length) return arr.map(Boolean);
+    }
+  } catch {
+    /* 忽略损坏的本地配置 */
+  }
+  return MA_LABELS.map(() => true);
+}
 
 /** 量柱坐标轴用中文单位，同花顺习惯「万手」而非 K */
 const VOLUME_FORMAT = {
@@ -104,8 +119,15 @@ export default function ChartPane() {
   const barsRef = useRef<Bar[]>([]);
   const indRef = useRef<IndicatorSeries | null>(null);
   const timeIdxRef = useRef<Map<number, number>>(new Map());
+  /** 记住当前视图范围，重绘（切均线、切副图）时据此还原，不跳回最新 */
+  const viewRef = useRef<{ key: string; range: { from: number; to: number } | null }>({
+    key: '',
+    range: null,
+  });
 
   const [sub, setSub] = useState<SubIndicator>('MACD');
+  /** 四条均线的显示开关，顺序对应 MA5/10/20/60 */
+  const [maVisible, setMaVisible] = useState<boolean[]>(loadMaVisible);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [bars, setBars] = useState<Bar[]>([]);
@@ -118,6 +140,25 @@ export default function ChartPane() {
 
   const q = quotes[selected];
   const name = q?.name || items.find((i) => i.symbol === selected)?.name || '';
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(MA_STORE_KEY, JSON.stringify(maVisible));
+    } catch {
+      /* 忽略隐私模式下的写入失败 */
+    }
+  }, [maVisible]);
+
+  /** 单条均线开关 */
+  const toggleMa = (i: number) =>
+    setMaVisible((prev) => prev.map((v, idx) => (idx === i ? !v : v)));
+  /** 整组开关：只要还有一条开着就全关，全关时全开 */
+  const toggleAllMa = () =>
+    setMaVisible((prev) => {
+      const next = !prev.some(Boolean);
+      return prev.map(() => next);
+    });
+  const maAllOff = !maVisible.some(Boolean);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -180,6 +221,11 @@ export default function ChartPane() {
       }
       const idx = timeIdxRef.current.get(param.time as number);
       setHoverIdx(idx === undefined ? null : idx);
+    });
+
+    // 记录用户当前的缩放/平移位置
+    chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (range) viewRef.current.range = { from: range.from, to: range.to };
     });
 
     const ro = new ResizeObserver(() => {
@@ -285,6 +331,9 @@ export default function ChartPane() {
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+    // 必须在清空序列之前取：setData 期间图表会回调可见范围，把记录值冲掉
+    const viewKey = `${selected}|${period}`;
+    const savedRange = viewRef.current.key === viewKey ? viewRef.current.range : null;
     clearSeries();
     if (!selected) return;
 
@@ -301,7 +350,7 @@ export default function ChartPane() {
     if (period === 'minute' && minute) {
       renderMinute(chart, minute);
     } else if (bars.length) {
-      renderKline(chart, bars, ind, period);
+      renderKline(chart, bars, ind, period, maVisible);
     }
 
     window.setTimeout(() => {
@@ -310,13 +359,17 @@ export default function ChartPane() {
         chart.timeScale().fitContent();
       } else {
         const total = bars.length;
-        if (total > 0) {
+        // 同一只票同一周期重绘（切均线/副图）时保留原视野，否则回到最新一屏
+        if (savedRange && savedRange.to <= total + 2) {
+          chart.timeScale().setVisibleLogicalRange(savedRange);
+        } else if (total > 0) {
           const show = Math.min(BARS_ON_SCREEN[period] ?? 150, total);
           chart.timeScale().setVisibleLogicalRange({ from: total - show - 0.5, to: total + 1.5 });
         }
       }
+      viewRef.current.key = viewKey;
     }, 0);
-  }, [bars, ind, minute, period, sub, selected]);
+  }, [bars, ind, minute, period, sub, selected, maVisible]);
 
   /** 光标所在 bar（无光标时取最后一根），供图例显示 */
   const legend = useMemo(() => {
@@ -489,7 +542,13 @@ export default function ChartPane() {
     });
   }
 
-  function renderKline(chart: IChartApi, list: Bar[], indicators: IndicatorSeries | null, periodKey: string) {
+  function renderKline(
+    chart: IChartApi,
+    list: Bar[],
+    indicators: IndicatorSeries | null,
+    periodKey: string,
+    maOn: boolean[],
+  ) {
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: UP,
       downColor: DOWN,
@@ -538,10 +597,10 @@ export default function ChartPane() {
         seriesRef.current.push(s);
         return s;
       };
-      line(indicators.ma5, MA_COLORS[0]);
-      line(indicators.ma10, MA_COLORS[1]);
-      line(indicators.ma20, MA_COLORS[2]);
-      line(indicators.ma60, MA_COLORS[3]);
+      const maSeries = [indicators.ma5, indicators.ma10, indicators.ma20, indicators.ma60];
+      maSeries.forEach((vals, i) => {
+        if (maOn[i]) line(vals, MA_COLORS[i]);
+      });
     }
 
     const vol = chart.addSeries(
@@ -668,6 +727,14 @@ export default function ChartPane() {
           </span>
         ))}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
+          <span
+            className={`period-tab${maAllOff ? '' : ' active'}`}
+            onClick={toggleAllMa}
+            style={{ visibility: isMinute ? 'hidden' : 'visible' }}
+            title={maAllOff ? '显示全部均线' : '隐藏全部均线'}
+          >
+            均线
+          </span>
           {SUB_INDICATORS.map((s) => (
             <span
               key={s}
@@ -745,10 +812,18 @@ export default function ChartPane() {
             </div>
             {showMa && (
               <div className="legend-row legend-ma">
-                {['MA5', 'MA10', 'MA20', 'MA60'].map((label, i) => (
-                  <span key={label} style={{ color: MA_COLORS[i] }}>
+                {MA_LABELS.map((label, i) => (
+                  <span
+                    key={label}
+                    className={`ma-item${maVisible[i] ? '' : ' off'}`}
+                    style={maVisible[i] ? { color: MA_COLORS[i] } : undefined}
+                    onClick={() => toggleMa(i)}
+                    title={maVisible[i] ? `隐藏 ${label}` : `显示 ${label}`}
+                  >
                     {label}{' '}
-                    <b className="num">{legend.ma[i] === null ? '--' : fmtNum(legend.ma[i] as number)}</b>
+                    <b className="num">
+                      {maVisible[i] && legend.ma[i] !== null ? fmtNum(legend.ma[i] as number) : '--'}
+                    </b>
                   </span>
                 ))}
               </div>
