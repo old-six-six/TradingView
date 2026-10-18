@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type Quote } from '../api';
 import { useStore } from '../store';
-import { gotoMarket } from '../nav';
 import { registerSearchFocus } from '../searchBus';
 import { cls, fmtNum, fmtPct } from '../fmt';
+import IndexModal, { type IndexRef } from './IndexModal';
 
 const INDEXES = [
   { symbol: 'sh000001', label: '上证', market: 'sh_main', full: '上证主板' },
@@ -54,6 +54,8 @@ export default function TopBar() {
   const [kw, setKw] = useState('');
   const [results, setResults] = useState<Array<{ symbol: string; code: string; name: string }>>([]);
   const [open, setOpen] = useState(false);
+  /** 点顶栏指数弹窗：默认看分时，可切分钟/日周月 K */
+  const [idxOpen, setIdxOpen] = useState<IndexRef | null>(null);
   const [recent, setRecent] = useState<Recent[]>(loadRecent);
   const timer = useRef<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -229,8 +231,8 @@ export default function TopBar() {
             <span
               key={i.symbol}
               className={`idx-item${market === i.market ? ' on' : ''}`}
-              onClick={() => gotoMarket(i.market)}
-              title={`查看${i.full}全部股票`}
+              onClick={() => setIdxOpen(i)}
+              title={`查看${i.full}分时（可切分钟/日周月K）`}
             >
               {i.label}{' '}
               <span className={`num ${cls(q?.changePct)}`}>
@@ -251,6 +253,8 @@ export default function TopBar() {
           {connected ? '已连接' : '连接中'}
         </span>
       </div>
+
+      {idxOpen && <IndexModal info={idxOpen} onClose={() => setIdxOpen(null)} />}
     </div>
   );
 }
