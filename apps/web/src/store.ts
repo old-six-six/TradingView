@@ -12,7 +12,26 @@ export interface MarketStat {
   loading: boolean;
 }
 
+/** 侧边栏与键盘翻票用的精简行：只要展示和排序需要的字段 */
 const SIDEBAR_KEY = 'tv.sidebar';
+export interface BoardLiteRow {
+  symbol: string;
+  code: string;
+  name: string;
+  price: number;
+  changePct: number;
+}
+
+/** 左侧板块列表的排序方式：按代码升序，或按涨幅从高到低 */
+export type SideSort = 'code' | 'pct';
+
+/** 按指定方式排序：代码升序 / 涨幅从高到低（涨幅榜的惯用方向） */
+export function sortBoardRows(rows: BoardLiteRow[], sort: SideSort): BoardLiteRow[] {
+  const list = [...rows];
+  if (sort === 'pct') list.sort((a, b) => b.changePct - a.changePct);
+  else list.sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+  return list;
+}
 
 /** 左侧自选是否展开，刷新后保持 */
 function loadSidebar(): boolean {
@@ -39,10 +58,12 @@ interface State {
    */
   entry: string | null;
   /**
-   * 「当前位置」板块的成员名单（按代码升序），给 【 】 在板块内逐个翻票用。
-   * 从列表页点进来时顺手注入；刷新后没有这份缓存就由 App 去补拉。
+   * 「当前位置」板块的成员名单（含名称与涨幅），左侧侧边栏和 【 】 都按它走。
+   * 从列表页点进来时会带着一份现成的；刷新后由 App 去补拉。
    */
-  boardMembers: { board: string; symbols: string[] } | null;
+  boardRows: { board: string; rows: BoardLiteRow[]; at: number } | null;
+  /** 左侧板块列表的排序方式，默认按代码 */
+  sideSort: SideSort;
   toggleSidebar: () => void;
   stale: boolean;
   connected: boolean;
@@ -53,7 +74,8 @@ interface State {
   setPeriod: (p: string) => void;
   setMarket: (m: string | null) => void;
   setEntry: (b: string | null) => void;
-  setBoardMembers: (m: { board: string; symbols: string[] } | null) => void;
+  setBoardRows: (m: { board: string; rows: BoardLiteRow[]; at: number } | null) => void;
+  setSideSort: (s: SideSort) => void;
   setMarketStat: (s: MarketStat | null) => void;
   setConnected: (v: boolean) => void;
 }
@@ -66,7 +88,9 @@ export const useStore = create<State>((set) => ({
   market: null,
   marketStat: null,
   entry: null,
-  boardMembers: null,
+  boardRows: null,
+  // 每次打开都回到代码顺序，不记上次的选择
+  sideSort: 'code',
   sidebar: loadSidebar(),
   toggleSidebar: () =>
     set((s) => {
@@ -101,7 +125,8 @@ export const useStore = create<State>((set) => ({
   setPeriod: (period) => set({ period }),
   setMarket: (market) => set({ market }),
   setEntry: (entry) => set({ entry }),
-  setBoardMembers: (boardMembers) => set({ boardMembers }),
+  setBoardRows: (boardRows) => set({ boardRows }),
+  setSideSort: (sideSort) => set({ sideSort }),
   setMarketStat: (marketStat) => set({ marketStat }),
   setConnected: (connected) => set({ connected }),
 }));

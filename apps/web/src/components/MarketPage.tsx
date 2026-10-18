@@ -356,12 +356,18 @@ export default function MarketPage({ board }: { board: string }) {
     return list;
   }, [rows, sort]);
 
-  // 键盘换股要按板块内的代码顺序走，这里把全量名单按代码排好备用
+  // 侧边栏和键盘换股都吃这份精简名单，按代码排好备用
   const codeOrder = useMemo(
     () =>
       [...rows]
         .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0))
-        .map((r) => r.symbol),
+        .map((r) => ({
+          symbol: r.symbol,
+          code: r.code,
+          name: r.name,
+          price: r.price,
+          changePct: r.changePct,
+        })),
     [rows],
   );
 
@@ -435,8 +441,10 @@ export default function MarketPage({ board }: { board: string }) {
               key={r.symbol}
               style={{ height: ROW_H }}
               onClick={() => {
-                // 先把成员名单交给 store，进图后按【 】就能立刻在板块内翻
-                useStore.getState().setBoardMembers({ board, symbols: codeOrder });
+                // 先把名单交给 store，进图后左侧栏和【 】都能立刻用上，不必再请求
+                useStore
+                  .getState()
+                  .setBoardRows({ board, rows: codeOrder, at: updatedAt || Date.now() });
                 gotoChart(r.symbol, board);
               }}
               title={`${r.name} ${r.code}`}

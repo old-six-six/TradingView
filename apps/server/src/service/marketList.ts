@@ -52,6 +52,15 @@ export interface MarketRow {
   time: string;
 }
 
+/** 侧边栏 / 键盘翻票用的精简行 */
+export interface LiteBoardRow {
+  symbol: string;
+  code: string;
+  name: string;
+  price: number;
+  changePct: number;
+}
+
 interface Universe {
   symbol: string;
   code: string;
@@ -232,16 +241,23 @@ async function refresh(key: MarketKey): Promise<MarketRow[]> {
 }
 
 /**
- * 某个市场的全部成员（只含 symbol/code/name，按代码升序）。
- * 给「键盘在板块内逐个翻票」用：全量快照接口要拉上千只的实时行情，
- * 体量几百 KB 且要几秒，翻页根本用不着，这里只读库里的名单。
+ * 某个市场的精简名单（symbol/code/name/price/changePct，按代码升序）。
+ * 给左侧侧边栏和键盘翻票用：自带的全量行有 27 个字段，上千只时几百 KB，
+ * 这里只留列表展示和排序需要的四项。
  */
-export async function marketUniverse(
+export async function marketLite(
   key: MarketKey,
-): Promise<{ rows: Universe[]; cached: boolean }> {
-  const hit = universeCache.get(key);
-  if (hit && Date.now() - hit.at < UNIVERSE_TTL) return { rows: hit.list, cached: true };
-  return { rows: await universeOf(key), cached: false };
+): Promise<{ rows: LiteBoardRow[]; at: number; cached: boolean }> {
+  const { rows, at, cached } = await marketRows(key);
+  const lite = rows.map((r) => ({
+    symbol: r.symbol,
+    code: r.code,
+    name: r.name,
+    price: r.price,
+    changePct: r.changePct,
+  }));
+  lite.sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+  return { rows: lite, at, cached };
 }
 
 const cache = new Map<MarketKey, { at: number; rows: MarketRow[] }>();

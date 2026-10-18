@@ -246,6 +246,12 @@ button {
   background: var(--bg-hover);
 }
 
+/* 左侧板块列表的行是虚拟滚动，高度必须固定内容才对得上 */
+.side-item {
+  padding: 5px 12px;
+  overflow: hidden;
+}
+
 .watch-item.active {
   background: var(--bg-soft);
   border-left-color: var(--up);
@@ -703,7 +709,8 @@ button {
  * 跟自己的圆角边框叠在一起很难看。这里关掉原生外观，改成背景自绘小箭头 +
  * 内边距留位，一个干净的圆角框。
  */
-.ind-select {
+.ind-select,
+.side-select {
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
@@ -728,17 +735,26 @@ button {
   flex-shrink: 0;
 }
 
-.ind-select::-ms-expand {
+.ind-select::-ms-expand,
+.side-select::-ms-expand {
   display: none;
 }
 
-.ind-select:hover {
+.ind-select:hover,
+.side-select:hover {
   border-color: var(--text-3);
 }
 
-.ind-select:focus {
+.ind-select:focus,
+.side-select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+}
+
+/* 左侧面板标题里的排序下拉：定宽，不跟着标题栏拉满 */
+.side-select {
+  flex: 0 0 58px;
+  width: 58px;
 }
 
 /* 主图指标面板比副图面板宽一点，容纳「主图指标」四字标签 */

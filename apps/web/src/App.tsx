@@ -1,17 +1,33 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { api, type Quote } from './api';
-import { useStore } from './store';
+import { useStore, sortBoardRows } from './store';
 import { backToChart } from './nav';
 import TopBar from './components/TopBar';
 import WatchList from './components/WatchList';
+import BoardSide from './components/BoardSide';
 import ChartPane from './components/ChartPane';
 import OrderBook from './components/OrderBook';
-import MarketPage, { MARKET_TABS } from './components/MarketPage';
+import MarketPage, { MARKET_TABS, MARKET_POS_LABEL } from './components/MarketPage';
 import StatusBar from './components/StatusBar';
 
+/** 左侧板块列表的行情刷新间隔，和列表页的快照节奏差不多 */
+const SIDE_POLL_MS = 15_000;
+
 export default function App() {
-  const { items, selected, setItems, mergeQuotes, setConnected, select, market, setMarket, sidebar, entry, boardMembers } =
-    useStore();
+  const {
+    items,
+    selected,
+    setItems,
+    mergeQuotes,
+    setConnected,
+    select,
+    market,
+    setMarket,
+    sidebar,
+    entry,
+    boardRows,
+    sideSort,
+  } = useStore();
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<number>(0);
   const itemsRef = useRef(items);
@@ -113,54 +129,59 @@ export default function App() {
   }, [selected, entry]);
 
   /**
-   * 「当前位置」板块的成员名单。列表页点进来时会带着名单一起过来（members），
-   * 刷新后没有这份缓存就补拉一次轻量接口（只含 symbol/code/name，几十毫秒）。
+   * 「当前位置」板块的成员名单。列表页点进来时会带着一份现成的，
+   * 刷新后没有这份缓存就补拉轻量接口；之后定时刷新，涨幅排序才跟得上盘面。
    */
   useEffect(() => {
-    const st = useStore.getState();
     if (!entry) {
-      if (st.boardMembers) st.setBoardMembers(null);
+      if (useStore.getState().boardRows) useStore.getState().setBoardRows(null);
       return;
     }
-    if (st.boardMembers?.board === entry && st.boardMembers.symbols.length) return;
+    if (useStore.getState().boardRows?.board === entry) return;
     let alive = true;
-    api.marketUniverse(entry).then(
-      (r) => {
+    const load = () =>
+      api.marketLite(entry).then((r) => {
         if (!alive || r.board !== entry) return;
-        useStore.getState().setBoardMembers({ board: entry, symbols: r.rows.map((x) => x.symbol) });
-      },
-      () => undefined,
-    );
+        useStore.getState().setBoardRows({ board: entry, rows: r.rows, at: r.at || Date.now() });
+      }, () => undefined);
+    load();
+    const t = window.setInterval(load, SIDE_POLL_MS);
     return () => {
       alive = false;
+      window.clearInterval(t);
     };
-  }, [entry, boardMembers]);
+  }, [entry, boardRows?.board]);
 
-  const move = useCallback(
-    (dir: 1 | -1) => {
-      const st = useStore.getState();
-      const board = st.entry;
-      // 从某个市场列表点进来的：只在那个板块里按代码顺序翻，出界就停住
-      if (board) {
-        const members = st.boardMembers;
-        // 名单还没到：宁可这次不动，也别串到自选列表里跳乱
-        if (members?.board !== board || !members.symbols.length) return;
-        const list = members.symbols;
-        const idx = list.indexOf(st.selected);
-        const cur = idx >= 0 ? idx : dir > 0 ? -1 : list.length;
-        const next = list[cur + dir];
-        // 第二个参数带着来源板块，否则会被当成自选切换把「当前位置」清掉
-        if (next) st.select(next, board);
-        return;
-      }
-      const list = itemsRef.current;
-      if (!list.length) return;
-      const idx = list.findIndex((i) => i.symbol === st.selected);
-      const next = list[Math.max(0, Math.min(list.length - 1, idx + dir))];
-      if (next) st.select(next.symbol);
-    },
-    [],
-  );
+  /** 左侧板块列表当前的顺序，【 】就按它走 */
+  const boardOrder = useMemo(() => {
+    const rows = boardRows?.board === entry ? boardRows.rows : null;
+    if (!rows?.length) return null;
+    return sortBoardRows(rows, sideSort).map((r) => r.symbol);
+  }, [entry, boardRows, sideSort]);
+  const boardOrderRef = useRef<string[] | null>(null);
+  boardOrderRef.current = boardOrder;
+
+  const move = useCallback((dir: 1 | -1) => {
+    const st = useStore.getState();
+    const board = st.entry;
+    // 从某个市场列表点进来的：只在那个板块里按左侧列表的顺序翻，出界就停住
+    if (board) {
+      const list = boardOrderRef.current;
+      // 名单还没到：宁可这次不动，也别串到自选列表里跳乱
+      if (!list?.length) return;
+      const idx = list.indexOf(st.selected);
+      const cur = idx >= 0 ? idx : dir > 0 ? -1 : list.length;
+      const next = list[cur + dir];
+      // 第二个参数带着来源板块，否则会被当成自选切换把「当前位置」清掉
+      if (next) st.select(next, board);
+      return;
+    }
+    const wl = itemsRef.current;
+    if (!wl.length) return;
+    const idx = wl.findIndex((i) => i.symbol === st.selected);
+    const next = wl[Math.max(0, Math.min(wl.length - 1, idx + dir))];
+    if (next) st.select(next.symbol);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -200,7 +221,13 @@ export default function App() {
           <MarketPage board={market} />
         ) : (
           <>
-            {sidebar && <WatchList />}
+            {sidebar &&
+              // 有「当前位置」时左侧列的是那个板块的全部股票，否则还是自选
+              (entry ? (
+                <BoardSide label={MARKET_POS_LABEL[entry] ?? entry} />
+              ) : (
+                <WatchList />
+              ))}
             <ChartPane />
             <OrderBook />
           </>

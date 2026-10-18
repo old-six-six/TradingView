@@ -217,11 +217,12 @@ export const api = {
       cached: boolean;
       rows: MarketRow[];
     }>(`/api/market/list?board=${board}`),
-  /** 板块成员名单（按代码升序），键盘在板块内翻票用 */
-  marketUniverse: (board: string) =>
+  /** 板块精简名单（含名称、现价、涨幅），左侧栏与键盘翻票用，服务端已按代码排好 */
+  marketLite: (board: string) =>
     get<{
       board: string;
+      at: number;
       cached: boolean;
-      rows: Array<{ symbol: string; code: string; name: string }>;
-    }>(`/api/market/universe?board=${board}`),
+      rows: Array<{ symbol: string; code: string; name: string; price: number; changePct: number }>;
+    }>(`/api/market/lite?board=${board}`),
 };

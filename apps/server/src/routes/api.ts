@@ -33,7 +33,7 @@ import {
   boardSyncState,
 } from '../service/boardSync.js';
 import { tagsOfStock, emTagSyncState } from '../service/emTagSync.js';
-import { marketRows, marketUniverse, isMarketKey, MARKETS } from '../service/marketList.js';
+import { marketRows, marketLite, isMarketKey, MARKETS } from '../service/marketList.js';
 import { MAX_BARS, FULL_HISTORY } from '../config.js';
 import type { IndicatorSeries, Bar } from '../types.js';
 
@@ -375,11 +375,11 @@ export async function apiRoutes(app: FastifyInstance) {
     const { rows, at, cached } = await marketRows(board);
     return { board, label: MARKETS[board].label, updatedAt: at, cached, rows };
   });
-  /** 板块成员名单：键盘在板块内翻票用，不带行情 */
-  app.get('/api/market/universe', async (req) => {
+  /** 板块精简名单（symbol/代码/名称/现价/涨幅），给左侧栏与键盘翻票用 */
+  app.get('/api/market/lite', async (req) => {
     const { board = '' } = req.query as Record<string, string>;
-    if (!isMarketKey(board)) return { board, cached: false, rows: [] };
-    return { board, ...(await marketUniverse(board)) };
+    if (!isMarketKey(board)) return { board, at: 0, cached: false, rows: [] };
+    return { board, ...(await marketLite(board)) };
   });
 }
 
