@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { api, type Quote } from './api';
 import { useStore, sortBoardRows } from './store';
+import { sectionSymbols, watchSections } from './sideOrder';
 import { backToChart } from './nav';
 import TopBar from './components/TopBar';
 import WatchList from './components/WatchList';
@@ -15,7 +16,6 @@ const SIDE_POLL_MS = 15_000;
 
 export default function App() {
   const {
-    items,
     selected,
     setItems,
     setFolders,
@@ -31,9 +31,7 @@ export default function App() {
   } = useStore();
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<number>(0);
-  const itemsRef = useRef(items);
   const selectedRef = useRef(selected);
-  itemsRef.current = items;
   selectedRef.current = selected;
 
   useEffect(() => {
@@ -178,11 +176,13 @@ export default function App() {
       if (next) st.select(next, board);
       return;
     }
-    const wl = itemsRef.current;
-    if (!wl.length) return;
-    const idx = wl.findIndex((i) => i.symbol === st.selected);
-    const next = wl[Math.max(0, Math.min(wl.length - 1, idx + dir))];
-    if (next) st.select(next.symbol);
+    // 自选：和左侧列表完全同一套顺序（文件夹顺序 + 组内当前排序），出界就停住
+    const order = sectionSymbols(watchSections(st.items, st.folders, st.quotes), st.sideSort);
+    if (!order.length) return;
+    const idx = order.indexOf(st.selected);
+    const cur = idx >= 0 ? idx : dir > 0 ? -1 : order.length;
+    const next = order[cur + dir];
+    if (next) st.select(next);
   }, []);
 
   useEffect(() => {
