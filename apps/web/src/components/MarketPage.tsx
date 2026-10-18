@@ -12,6 +12,18 @@ export const MARKET_TABS = [
   { key: 'bj', label: '北交所' },
 ] as const;
 
+/**
+ * 五大市场的简称。列表页 tab 用的是全称（上证主板/北交所），
+ * 但图表底部「当前位置」要贴着顶栏指数的叫法写。
+ */
+export const MARKET_POS_LABEL: Record<string, string> = {
+  sh_main: '上证',
+  sz_main: '深证',
+  cyb: '创业板',
+  kcb: '科创',
+  bj: '北证',
+};
+
 /** 列表刷新间隔。服务端有 2.5s 缓存，太快只会打上游 */
 const POLL_MS = 4000;
 const ROW_H = 24;
@@ -413,7 +425,7 @@ export default function MarketPage({ board }: { board: string }) {
               className="mk-row"
               key={r.symbol}
               style={{ height: ROW_H }}
-              onClick={() => gotoChart(r.symbol)}
+              onClick={() => gotoChart(r.symbol, board)}
               title={`${r.name} ${r.code}`}
             >
               {COLS.map((c) => {

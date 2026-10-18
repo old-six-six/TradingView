@@ -21,13 +21,19 @@ export function backToChart() {
   history.replaceState(null, '', url);
 }
 
-/** 打开某只票的 K 线，同时退出列表页 */
-export function gotoChart(symbol: string) {
+/**
+ * 打开某只票的 K 线，同时退出列表页。
+ * fromBoard 记下是从哪个市场列表点进来的，图表底部要显示「当前位置」；
+ * 也会写进地址栏，刷新来源不丢。
+ */
+export function gotoChart(symbol: string, fromBoard?: string) {
   const st = useStore.getState();
-  st.select(symbol);
+  st.select(symbol, fromBoard ?? null);
   st.setMarket(null);
   const url = new URL(location.href);
   url.searchParams.delete('board');
   url.searchParams.set('symbol', symbol);
+  if (fromBoard) url.searchParams.set('from', fromBoard);
+  else url.searchParams.delete('from');
   history.replaceState(null, '', url);
 }

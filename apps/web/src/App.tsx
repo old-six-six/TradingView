@@ -6,11 +6,11 @@ import TopBar from './components/TopBar';
 import WatchList from './components/WatchList';
 import ChartPane from './components/ChartPane';
 import OrderBook from './components/OrderBook';
-import MarketPage from './components/MarketPage';
+import MarketPage, { MARKET_TABS } from './components/MarketPage';
 import StatusBar from './components/StatusBar';
 
 export default function App() {
-  const { items, selected, setItems, mergeQuotes, setConnected, select, market, setMarket, sidebar } =
+  const { items, selected, setItems, mergeQuotes, setConnected, select, market, setMarket, sidebar, entry } =
     useStore();
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<number>(0);
@@ -24,9 +24,12 @@ export default function App() {
     const p = params.get('period');
     const s = params.get('symbol');
     const b = params.get('board');
+    const f = params.get('from');
     if (p) useStore.getState().setPeriod(p);
     if (b) setMarket(b);
     if (s) select(s);
+    // 只有五大市场列表点进来的才认这个来源，脏值当没有
+    if (f && MARKET_TABS.some((t) => t.key === f)) useStore.getState().setEntry(f);
     api
       .watchlist()
       .then((r) => {
@@ -94,10 +97,20 @@ export default function App() {
   useEffect(() => {
     if (!selected) return;
     const url = new URL(location.href);
-    if (url.searchParams.get('symbol') === selected) return;
-    url.searchParams.set('symbol', selected);
-    history.replaceState(null, '', url);
-  }, [selected]);
+    let changed = false;
+    if (url.searchParams.get('symbol') !== selected) {
+      url.searchParams.set('symbol', selected);
+      changed = true;
+    }
+    // 来源板块跟着一起写：换了票之后它就失效了，别留在地址栏上骗人
+    const from = entry ?? null;
+    if (url.searchParams.get('from') !== from) {
+      if (from) url.searchParams.set('from', from);
+      else url.searchParams.delete('from');
+      changed = true;
+    }
+    if (changed) history.replaceState(null, '', url);
+  }, [selected, entry]);
 
   const move = useCallback(
     (dir: 1 | -1) => {

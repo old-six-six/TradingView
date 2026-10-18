@@ -24,6 +24,7 @@ import { BandFillPrimitive } from '../bandFill';
 import { useStore } from '../store';
 import { cls, fmtAmount, fmtNum, fmtPct, fmtVolume } from '../fmt';
 import BoardModal, { type BoardRef } from './BoardModal';
+import { MARKET_POS_LABEL } from './MarketPage';
 
 const PERIODS: Array<{ key: string; label: string }> = [
   { key: 'minute', label: '分时' },
@@ -46,9 +47,6 @@ const BARS_ON_SCREEN: Record<string, number> = {
   week: 140,
   month: 120,
 };
-
-/** 图表右侧留白（根），与 timeScale.rightOffset 保持一致 */
-const RIGHT_PAD = 4;
 
 const SUB_INDICATORS = ['MACD', 'KDJ', 'RSI', 'CYHT'] as const;
 type SubIndicator = (typeof SUB_INDICATORS)[number];
@@ -244,7 +242,7 @@ function makeTickFormatter() {
 }
 
 export default function ChartPane() {
-  const { selected, period, setPeriod, quotes, items, sidebar, toggleSidebar } = useStore();
+  const { selected, period, setPeriod, quotes, items, sidebar, toggleSidebar, entry } = useStore();
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any>[]>([]);
@@ -316,6 +314,8 @@ export default function ChartPane() {
 
   const q = quotes[selected];
   const name = q?.name || items.find((i) => i.symbol === selected)?.name || '';
+  /** 从五大市场列表点进来时显示来源板块，其它入口为 null */
+  const posLabel = entry ? MARKET_POS_LABEL[entry] ?? null : null;
 
   /**
    * 支撑压力是纯价格指标（不需要服务端那套指标序列），按当前周期的 K 线现算，
@@ -657,9 +657,9 @@ export default function ChartPane() {
     if (!r) return;
 
     const w = r.to - r.from;
-    // 缩到 15 根就停，再细只剩影线看不出形态；放大上限是全部历史 + 右侧留白
     const lo = 0;
-    const hi = bars.length - 1 + RIGHT_PAD;
+    // 右端同样上限就是最后一根：多算的留白图表会钳掉，宽度跟着变，连按就不是等比了
+    const hi = bars.length - 1;
     const nw = Math.max(15, Math.min(hi - lo, w * factor));
     if (Math.abs(nw - w) < 0.01) return;
 
@@ -707,26 +707,46 @@ export default function ChartPane() {
     if (!chart || !candle || i === null || !list[i]) return;
 
     const ts = chart.timeScale();
-    const r = ts.getVisibleLogicalRange();
+    /**
+     * 图表把可见范围右端硬钳到最后一根：再往右要留白会被静默丢掉（实测请求 7651
+     * 只得到 7650）。而判断「光标在视野内」时又要多留半格余量，于是走到最后一根
+     * 就会不停请求一个永远不生效的平移，光标卡在倒数第二根 —— 按 → 没反应。
+     */
+    const maxTo = list.length - 1;
 
     // 上一帧请求的窗口还没生效，继续等
     const want = pendingRange.current;
-    if (want && r && (Math.abs(r.from - want.from) > 0.01 || Math.abs(r.to - want.to) > 0.01)) {
-      if (depth < 10) {
+    if (want) {
+      const cur = ts.getVisibleLogicalRange();
+      const waiting =
+        cur && (Math.abs(cur.from - want.from) > 0.01 || Math.abs(cur.to - want.to) > 0.01);
+      if (waiting && depth < 10) {
         followRaf.current = requestAnimationFrame(() => placeCrosshair(depth + 1));
         return;
       }
+      pendingRange.current = null;
     }
-    pendingRange.current = null;
 
-    if (r && (i < r.from + 0.5 || i > r.to - 0.5)) {
+    const r = ts.getVisibleLogicalRange();
+    if (r) {
       const w = r.to - r.from;
-      const nr = i <= r.from ? { from: i - 1, to: i - 1 + w } : { from: i + 1 - w, to: i + 1 };
-      pendingRange.current = nr;
-      ts.setVisibleLogicalRange(nr);
-      if (depth < 10) {
-        followRaf.current = requestAnimationFrame(() => placeCrosshair(depth + 1));
-        return;
+      let nr: { from: number; to: number } | null = null;
+      if (i < r.from + 0.5) nr = { from: i - 1, to: i - 1 + w };
+      else if (i > r.to - 0.5) nr = { from: i + 1 - w, to: i + 1 };
+      if (nr) {
+        if (nr.to > maxTo) nr = { from: maxTo - w, to: maxTo };
+        if (nr.from < 0) nr = { from: 0, to: w };
+        // 已经顶到数据边界、窗口挪不动了，就在当前视野里直接落光标，别再空等
+        const moved = Math.abs(nr.from - r.from) > 0.01 || Math.abs(nr.to - r.to) > 0.01;
+        if (moved) {
+          pendingRange.current = nr;
+          progUntil.current = performance.now() + 200;
+          ts.setVisibleLogicalRange(nr);
+          if (depth < 10) {
+            followRaf.current = requestAnimationFrame(() => placeCrosshair(depth + 1));
+            return;
+          }
+        }
       }
     }
 
@@ -1893,6 +1913,11 @@ export default function ChartPane() {
           {sidebar ? '◀ 自选' : '▶ 自选'}
         </span>
         <span className="foot-hint">← → 移动光标　↑ ↓ 缩放　【 】换股</span>
+        {posLabel && (
+          <span className="foot-hint" title={`从${posLabel}列表点进来的`}>
+            当前位置：【{posLabel}】
+          </span>
+        )}
         <span style={{ marginLeft: 'auto' }}>
           {legend ? (legend.hovered ? `光标 ${legend.b.date}` : `最新 ${lastDate}`) : lastDate}
         </span>

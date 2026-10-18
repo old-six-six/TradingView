@@ -33,15 +33,21 @@ interface State {
   marketStat: MarketStat | null;
   /** 左侧自选栏是否展开 */
   sidebar: boolean;
+  /**
+   * 当前这只票是从哪个市场板块点进来的（板块 key）。只有五大 MarketPage
+   * 列表点进来才有值，自选 / 板块弹窗 / 【】换股都会清掉。
+   */
+  entry: string | null;
   toggleSidebar: () => void;
   stale: boolean;
   connected: boolean;
   lastTs: number;
   setItems: (items: WatchItem[]) => void;
   mergeQuotes: (quotes: Quote[], stale?: boolean) => void;
-  select: (symbol: string) => void;
+  select: (symbol: string, fromBoard?: string | null) => void;
   setPeriod: (p: string) => void;
   setMarket: (m: string | null) => void;
+  setEntry: (b: string | null) => void;
   setMarketStat: (s: MarketStat | null) => void;
   setConnected: (v: boolean) => void;
 }
@@ -53,6 +59,7 @@ export const useStore = create<State>((set) => ({
   period: 'day',
   market: null,
   marketStat: null,
+  entry: null,
   sidebar: loadSidebar(),
   toggleSidebar: () =>
     set((s) => {
@@ -75,9 +82,18 @@ export const useStore = create<State>((set) => ({
       for (const q of quotes) next[q.symbol] = q;
       return { quotes: next, stale: stale ?? s.stale, lastTs: Date.now() };
     }),
-  select: (symbol) => set({ selected: symbol }),
+  /**
+   * 选票。带第二个参数时同时记下来源板块；不传的话——只要真的换了票就把来源清掉
+   * （同一个 symbol 重复 select 常见于初始化和刷新，那不算切换）。
+   */
+  select: (symbol, fromBoard) =>
+    set((s) => ({
+      selected: symbol,
+      entry: fromBoard !== undefined ? fromBoard : s.selected === symbol ? s.entry : null,
+    })),
   setPeriod: (period) => set({ period }),
   setMarket: (market) => set({ market }),
+  setEntry: (entry) => set({ entry }),
   setMarketStat: (marketStat) => set({ marketStat }),
   setConnected: (connected) => set({ connected }),
 }));
