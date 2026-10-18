@@ -356,6 +356,15 @@ export default function MarketPage({ board }: { board: string }) {
     return list;
   }, [rows, sort]);
 
+  // 键盘换股要按板块内的代码顺序走，这里把全量名单按代码排好备用
+  const codeOrder = useMemo(
+    () =>
+      [...rows]
+        .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0))
+        .map((r) => r.symbol),
+    [rows],
+  );
+
   const start = Math.max(0, Math.floor(scrollTop / ROW_H) - 8);
   const end = Math.min(sorted.length, Math.ceil((scrollTop + viewH) / ROW_H) + 8);
   const slice = sorted.slice(start, end);
@@ -425,7 +434,11 @@ export default function MarketPage({ board }: { board: string }) {
               className="mk-row"
               key={r.symbol}
               style={{ height: ROW_H }}
-              onClick={() => gotoChart(r.symbol, board)}
+              onClick={() => {
+                // 先把成员名单交给 store，进图后按【 】就能立刻在板块内翻
+                useStore.getState().setBoardMembers({ board, symbols: codeOrder });
+                gotoChart(r.symbol, board);
+              }}
               title={`${r.name} ${r.code}`}
             >
               {COLS.map((c) => {

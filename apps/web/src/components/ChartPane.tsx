@@ -1912,7 +1912,9 @@ export default function ChartPane() {
         >
           {sidebar ? '◀ 自选' : '▶ 自选'}
         </span>
-        <span className="foot-hint">← → 移动光标　↑ ↓ 缩放　【 】换股</span>
+        <span className="foot-hint">
+          ← → 移动光标　↑ ↓ 缩放　【 】{posLabel ? `${posLabel}内换股` : '换股'}
+        </span>
         {posLabel && (
           <span className="foot-hint" title={`从${posLabel}列表点进来的`}>
             当前位置：【{posLabel}】

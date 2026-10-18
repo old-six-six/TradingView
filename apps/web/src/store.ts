@@ -38,6 +38,11 @@ interface State {
    * 列表点进来才有值，自选 / 板块弹窗 / 【】换股都会清掉。
    */
   entry: string | null;
+  /**
+   * 「当前位置」板块的成员名单（按代码升序），给 【 】 在板块内逐个翻票用。
+   * 从列表页点进来时顺手注入；刷新后没有这份缓存就由 App 去补拉。
+   */
+  boardMembers: { board: string; symbols: string[] } | null;
   toggleSidebar: () => void;
   stale: boolean;
   connected: boolean;
@@ -48,6 +53,7 @@ interface State {
   setPeriod: (p: string) => void;
   setMarket: (m: string | null) => void;
   setEntry: (b: string | null) => void;
+  setBoardMembers: (m: { board: string; symbols: string[] } | null) => void;
   setMarketStat: (s: MarketStat | null) => void;
   setConnected: (v: boolean) => void;
 }
@@ -60,6 +66,7 @@ export const useStore = create<State>((set) => ({
   market: null,
   marketStat: null,
   entry: null,
+  boardMembers: null,
   sidebar: loadSidebar(),
   toggleSidebar: () =>
     set((s) => {
@@ -94,6 +101,7 @@ export const useStore = create<State>((set) => ({
   setPeriod: (period) => set({ period }),
   setMarket: (market) => set({ market }),
   setEntry: (entry) => set({ entry }),
+  setBoardMembers: (boardMembers) => set({ boardMembers }),
   setMarketStat: (marketStat) => set({ marketStat }),
   setConnected: (connected) => set({ connected }),
 }));

@@ -217,4 +217,11 @@ export const api = {
       cached: boolean;
       rows: MarketRow[];
     }>(`/api/market/list?board=${board}`),
+  /** 板块成员名单（按代码升序），键盘在板块内翻票用 */
+  marketUniverse: (board: string) =>
+    get<{
+      board: string;
+      cached: boolean;
+      rows: Array<{ symbol: string; code: string; name: string }>;
+    }>(`/api/market/universe?board=${board}`),
 };

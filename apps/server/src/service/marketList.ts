@@ -231,6 +231,19 @@ async function refresh(key: MarketKey): Promise<MarketRow[]> {
   return out;
 }
 
+/**
+ * 某个市场的全部成员（只含 symbol/code/name，按代码升序）。
+ * 给「键盘在板块内逐个翻票」用：全量快照接口要拉上千只的实时行情，
+ * 体量几百 KB 且要几秒，翻页根本用不着，这里只读库里的名单。
+ */
+export async function marketUniverse(
+  key: MarketKey,
+): Promise<{ rows: Universe[]; cached: boolean }> {
+  const hit = universeCache.get(key);
+  if (hit && Date.now() - hit.at < UNIVERSE_TTL) return { rows: hit.list, cached: true };
+  return { rows: await universeOf(key), cached: false };
+}
+
 const cache = new Map<MarketKey, { at: number; rows: MarketRow[] }>();
 const inflight = new Map<MarketKey, Promise<MarketRow[]>>();
 

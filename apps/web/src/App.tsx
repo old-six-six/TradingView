@@ -10,7 +10,7 @@ import MarketPage, { MARKET_TABS } from './components/MarketPage';
 import StatusBar from './components/StatusBar';
 
 export default function App() {
-  const { items, selected, setItems, mergeQuotes, setConnected, select, market, setMarket, sidebar, entry } =
+  const { items, selected, setItems, mergeQuotes, setConnected, select, market, setMarket, sidebar, entry, boardMembers } =
     useStore();
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<number>(0);
@@ -112,15 +112,54 @@ export default function App() {
     if (changed) history.replaceState(null, '', url);
   }, [selected, entry]);
 
+  /**
+   * 「当前位置」板块的成员名单。列表页点进来时会带着名单一起过来（members），
+   * 刷新后没有这份缓存就补拉一次轻量接口（只含 symbol/code/name，几十毫秒）。
+   */
+  useEffect(() => {
+    const st = useStore.getState();
+    if (!entry) {
+      if (st.boardMembers) st.setBoardMembers(null);
+      return;
+    }
+    if (st.boardMembers?.board === entry && st.boardMembers.symbols.length) return;
+    let alive = true;
+    api.marketUniverse(entry).then(
+      (r) => {
+        if (!alive || r.board !== entry) return;
+        useStore.getState().setBoardMembers({ board: entry, symbols: r.rows.map((x) => x.symbol) });
+      },
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [entry, boardMembers]);
+
   const move = useCallback(
     (dir: 1 | -1) => {
+      const st = useStore.getState();
+      const board = st.entry;
+      // 从某个市场列表点进来的：只在那个板块里按代码顺序翻，出界就停住
+      if (board) {
+        const members = st.boardMembers;
+        // 名单还没到：宁可这次不动，也别串到自选列表里跳乱
+        if (members?.board !== board || !members.symbols.length) return;
+        const list = members.symbols;
+        const idx = list.indexOf(st.selected);
+        const cur = idx >= 0 ? idx : dir > 0 ? -1 : list.length;
+        const next = list[cur + dir];
+        // 第二个参数带着来源板块，否则会被当成自选切换把「当前位置」清掉
+        if (next) st.select(next, board);
+        return;
+      }
       const list = itemsRef.current;
       if (!list.length) return;
-      const idx = list.findIndex((i) => i.symbol === selectedRef.current);
+      const idx = list.findIndex((i) => i.symbol === st.selected);
       const next = list[Math.max(0, Math.min(list.length - 1, idx + dir))];
-      if (next) select(next.symbol);
+      if (next) st.select(next.symbol);
     },
-    [select],
+    [],
   );
 
   useEffect(() => {
