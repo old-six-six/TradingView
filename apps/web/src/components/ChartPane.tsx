@@ -1561,7 +1561,7 @@ export default function ChartPane() {
             {p.label}
           </span>
         ))}
-        {/* 当日行情摘要放在周期行右侧的空白处，省下图表顶部一行 */}
+        {/* 当日行情摘要直接排在周期行里、紧贴「月K」右边，省下图表顶部一行 */}
         <div className="period-legend" title="当日行情摘要（窗口较窄时可横向滚动查看）">
           {isMinute && minuteLegend && (
             <div className="legend-row">

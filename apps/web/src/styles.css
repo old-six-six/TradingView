@@ -661,10 +661,15 @@ button {
   border-bottom-color: var(--text);
 }
 
-/* 周期行右侧的当日行情摘要：原来占图表顶部一行，移过来省地方 */
+/* 当日行情摘要：周期行里紧贴「月K」右边，用一条竖分隔线与周期 tab 分开 */
 .period-legend {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  margin-left: -6px;
+  padding-left: 11px;
+  border-left: 1px solid var(--border);
   overflow-x: auto;
   overflow-y: hidden;
   font-size: 11px;
