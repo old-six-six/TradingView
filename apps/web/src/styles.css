@@ -757,6 +757,39 @@ button {
   width: 58px;
 }
 
+/* 排序下拉左边的「跳到首/尾」两个小按钮 */
+.side-ctl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.side-jump {
+  width: 18px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.side-jump:hover {
+  border-color: var(--text-3);
+  color: var(--text);
+}
+
+.side-jump:active {
+  background: var(--bg-hover);
+}
+
 /* 主图指标面板比副图面板宽一点，容纳「主图指标」四字标签 */
 .ind-pop-main {
   width: 216px;

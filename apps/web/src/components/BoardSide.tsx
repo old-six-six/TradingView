@@ -45,6 +45,24 @@ export default function BoardSide({ label }: { label: string }) {
     }
   }, [sorted, selected, followKey]);
 
+  /**
+   * 跳到当前排序下的第一只 / 最后一只，并把列表贴到顶或底。
+   * 已经在那一端时也要能滚回去，所以除了 select 还直接改 scrollTop。
+   */
+  const jumpEdge = (to: 'top' | 'bottom') => {
+    if (!sorted.length) return;
+    const target = to === 'top' ? sorted[0] : sorted[sorted.length - 1];
+    // 记下新的跟随键，免得下面的居中逻辑把刚贴好的位置又挪走
+    followRef.current = `${sideSort}|${target.symbol}`;
+    const el = boxRef.current;
+    if (el) {
+      const y = to === 'top' ? 0 : el.scrollHeight;
+      el.scrollTop = y;
+      setScrollTop(el.scrollTop);
+    }
+    if (target.symbol !== selected) select(target.symbol, entry);
+  };
+
   const start = Math.max(0, Math.floor(scrollTop / ROW_H) - BUFFER);
   const end = Math.min(sorted.length, Math.ceil((scrollTop + viewH) / ROW_H) + BUFFER);
   const slice = sorted.slice(start, end);
@@ -53,15 +71,33 @@ export default function BoardSide({ label }: { label: string }) {
     <div className="sidebar">
       <div className="panel-title">
         <span>{label}</span>
-        <select
-          className="side-select"
-          value={sideSort}
-          onChange={(e) => setSideSort(e.target.value as 'code' | 'pct')}
-          title="左侧列表的排序方式，键盘【 】也按这个顺序走"
-        >
-          <option value="code">代码</option>
-          <option value="pct">涨幅</option>
-        </select>
+        <div className="side-ctl">
+          <button
+            className="side-jump"
+            onClick={() => jumpEdge('top')}
+            title="跳到最上方（当前排序的第一只）"
+            aria-label="跳到最上方"
+          >
+            ↑
+          </button>
+          <button
+            className="side-jump"
+            onClick={() => jumpEdge('bottom')}
+            title="跳到最下方（当前排序的最后一只）"
+            aria-label="跳到最下方"
+          >
+            ↓
+          </button>
+          <select
+            className="side-select"
+            value={sideSort}
+            onChange={(e) => setSideSort(e.target.value as 'code' | 'pct')}
+            title="左侧列表的排序方式，键盘【 】也按这个顺序走"
+          >
+            <option value="code">代码</option>
+            <option value="pct">涨幅</option>
+          </select>
+        </div>
       </div>
       <div className="watch-list" ref={boxRef} onScroll={(e) => setScrollTop((e.target as HTMLDivElement).scrollTop)}>
         {!rows.length && <div className="empty">正在载入{label}…</div>}
