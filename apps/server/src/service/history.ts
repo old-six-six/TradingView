@@ -60,12 +60,12 @@ const state: HistoryState = {
 
 let abortRequested = false;
 
-/** 全表 COUNT 在千万行上不便宜，缓存 30 秒 */
+/** 全表 COUNT 在千万行上不便宜（几百毫秒），缓存一分钟；任务结束时强制刷新一次 */
 let coverageAt = 0;
 let coverageValue: HistoryCoverage = { symbols: 0, bars: 0, newest: null };
 
 export async function historyCoverage(force = false): Promise<HistoryCoverage> {
-  if (!force && coverageAt && Date.now() - coverageAt < 30_000) return coverageValue;
+  if (!force && coverageAt && Date.now() - coverageAt < 60_000) return coverageValue;
   const rows = await query<{ symbols: number | bigint; bars: number | bigint; newest: string | null }>(
     'SELECT COUNT(DISTINCT symbol) AS symbols, COUNT(*) AS bars, MAX(date) AS newest FROM daily_bar',
   );
@@ -239,7 +239,8 @@ async function runPool(symbols: string[], concurrency: number): Promise<void> {
       state.done++;
       const elapsed = Date.now() - (state.startedAt ?? Date.now());
       state.etaMs = state.done ? Math.round((elapsed / state.done) * (state.total - state.done)) : null;
-      coverageAt = 0; // 进度变了，下次 status 重新统计
+      // 注意：不要在这里清 coverage 缓存。COUNT(*) 走全表，几百万行扫一次要几百毫秒，
+      // 而前端每 3 秒问一次进度，清了就等于每 3 秒全表扫一遍，会把单线程的库堵死。
       // 每只之间留点空隙，别把上游打满
       await sleep(120 + Math.floor(Math.random() * 120));
     }
