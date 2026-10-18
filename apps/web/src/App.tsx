@@ -142,20 +142,28 @@ export default function App() {
       if (useStore.getState().boardRows) useStore.getState().setBoardRows(null);
       return;
     }
-    if (useStore.getState().boardRows?.board === entry) return;
     let alive = true;
     const load = () =>
       api.marketLite(entry).then((r) => {
         if (!alive || r.board !== entry) return;
-        useStore.getState().setBoardRows({ board: entry, rows: r.rows, at: r.at || Date.now() });
+        const st = useStore.getState();
+        // 第一次拿到这个板块的名单：当前票不在里面就落到第一只，
+        // 否则从下拉切板块时会出现「位置变了但图里还是上一只票」
+        const firstLoad = st.boardRows?.board !== entry;
+        st.setBoardRows({ board: entry, rows: r.rows, at: r.at || Date.now() });
+        if (firstLoad && r.rows.length && !r.rows.some((row) => row.symbol === st.selected)) {
+          const head = sortBoardRows(r.rows, st.sideSort)[0];
+          if (head) st.select(head.symbol, entry);
+        }
       }, () => undefined);
     load();
+    // 依赖只留 entry：boardRows 变化会重启定时器，轮询就断了
     const t = window.setInterval(load, SIDE_POLL_MS);
     return () => {
       alive = false;
       window.clearInterval(t);
     };
-  }, [entry, boardRows?.board]);
+  }, [entry]);
 
   /** 自选文件夹被删掉时，别把「当前位置」悬在一个不存在的位置上 */
   useEffect(() => {

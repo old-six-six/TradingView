@@ -26,6 +26,7 @@ import { cls, fmtAmount, fmtNum, fmtPct, fmtVolume } from '../fmt';
 import BoardModal, { type BoardRef } from './BoardModal';
 import WatchAddModal from './WatchAddModal';
 import PosMenu from './PosMenu';
+import BoardMenu from './BoardMenu';
 import { watchEntryFolder } from '../sideOrder';
 import { MARKET_POS_LABEL } from './MarketPage';
 
@@ -316,6 +317,8 @@ export default function ChartPane() {
   const [watchOpen, setWatchOpen] = useState(false);
   /** 底部「自选板块」下拉 */
   const [posOpen, setPosOpen] = useState(false);
+  /** 底部「沪深京」下拉（五大板块） */
+  const [boardOpen, setBoardOpen] = useState(false);
   const paneRoRef = useRef<ResizeObserver | null>(null);
   const observedElsRef = useRef<Array<HTMLElement | null>>([]);
 
@@ -1940,12 +1943,29 @@ export default function ChartPane() {
         <span className="pos-wrap">
           <button
             className={`foot-btn pos-btn${posOpen ? ' on' : ''}`}
-            onClick={() => setPosOpen((v) => !v)}
+            onClick={() => {
+              setPosOpen((v) => !v);
+              setBoardOpen(false);
+            }}
             title="选择自选板块（文件夹），左侧按板块方式显示"
           >
             自选板块<i className="caret">▾</i>
           </button>
           {posOpen && <PosMenu onClose={() => setPosOpen(false)} />}
+        </span>
+        {/* 再往右：切到五大板块之一，显示方式与自选完全一致 */}
+        <span className="pos-wrap">
+          <button
+            className={`foot-btn pos-btn${boardOpen ? ' on' : ''}`}
+            onClick={() => {
+              setBoardOpen((v) => !v);
+              setPosOpen(false);
+            }}
+            title="选择沪深京板块，左侧按同一套方式显示其全部股票"
+          >
+            沪深京<i className="caret">▾</i>
+          </button>
+          {boardOpen && <BoardMenu onClose={() => setBoardOpen(false)} />}
         </span>
         <span style={{ marginLeft: 'auto' }}>
           {legend ? (legend.hovered ? `光标 ${legend.b.date}` : `最新 ${lastDate}`) : lastDate}
