@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { api, type Quote } from './api';
+import { api, type Quote, type WatchFolder, type WatchItem } from './api';
 import { useStore, sortBoardRows } from './store';
-import { sectionSymbols, isWatchEntry, watchEntryFolder, watchFolderRows, watchSections } from './sideOrder';
+import {
+  sectionSymbols,
+  isWatchEntry,
+  watchEntryFolder,
+  watchEntryKey,
+  watchFolderRows,
+  watchSections,
+} from './sideOrder';
 import { backFromMarket } from './nav';
 import TopBar from './components/TopBar';
 import WatchList from './components/WatchList';
@@ -13,6 +20,23 @@ import StatusBar from './components/StatusBar';
 
 /** 左侧板块列表的行情刷新间隔，和列表页的快照节奏差不多 */
 const SIDE_POLL_MS = 15_000;
+
+const DEFAULT_FOLDER = '默认';
+
+/**
+ * 开屏落点：优先「默认」文件夹（有票时），它空了就挑第一个有票的文件夹，
+ * 全空才退回「默认」这个名字，保证「当前位置」有个着落。
+ */
+function pickBootFolder(items: WatchItem[], folders: WatchFolder[]): string | null {
+  const names = folders.length
+    ? folders.map((f) => f.name)
+    : [...new Set(items.map((it) => it.grp || DEFAULT_FOLDER))];
+  const count = (n: string) => items.filter((it) => (it.grp || DEFAULT_FOLDER) === n).length;
+  if (names.includes(DEFAULT_FOLDER) && count(DEFAULT_FOLDER) > 0) return DEFAULT_FOLDER;
+  const nonEmpty = names.find((n) => count(n) > 0);
+  if (nonEmpty) return nonEmpty;
+  return names.includes(DEFAULT_FOLDER) ? DEFAULT_FOLDER : names[0] ?? null;
+}
 
 export default function App() {
   const {
@@ -50,13 +74,32 @@ export default function App() {
     if (f && (MARKET_TABS.some((t) => t.key === f) || isWatchEntry(f))) {
       useStore.getState().setEntry(f);
     }
+    // 地址栏什么都没指定（裸进系统）：落到「默认」文件夹，选它排序后的第一只
+    const boot = !s && !f && !b;
     api
       .watchlist()
       .then((r) => {
         setItems(r.items);
         setFolders(r.folders ?? []);
-        const first = s || r.items[0]?.symbol;
-        if (first) select(first);
+        if (!boot) {
+          const first = s || r.items[0]?.symbol;
+          if (first) select(first);
+          return;
+        }
+        const name = pickBootFolder(r.items, r.folders ?? []);
+        if (!name) {
+          if (r.items[0]) select(r.items[0].symbol);
+          return;
+        }
+        const key = watchEntryKey(name);
+        useStore.getState().setEntry(key);
+        const head = sortBoardRows(
+          watchFolderRows(r.items, r.folders ?? [], {}, name),
+          useStore.getState().sideSort,
+        )[0];
+        // 带着来源选票，否则 select 会把「当前位置」清掉
+        if (head) select(head.symbol, key);
+        else if (r.items[0]) select(r.items[0].symbol);
       })
       .catch(() => undefined);
   }, [setItems, setFolders, select, setMarket]);
