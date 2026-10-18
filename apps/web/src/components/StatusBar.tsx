@@ -24,8 +24,8 @@ export default function StatusBar() {
     <div className="statusbar">
       {market ? (
         <>
-          <span className="sb-back" onClick={backFromMarket} title="返回图表（Esc）">
-            ← 返回图表
+          <span className="sb-back" onClick={backFromMarket} title="返回上一层（Esc）">
+            ← 返回
           </span>
           <span className="sb-cur">{marketStat?.label ?? market}</span>
           {marketStat?.loading && <span>加载中…</span>}
