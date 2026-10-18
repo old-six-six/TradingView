@@ -698,25 +698,50 @@ button {
   flex-shrink: 0;
 }
 
+/**
+ * 原生 select 的 menulist-button 会在右侧多渲染一条自带背景和边框的箭头块，
+ * 跟自己的圆角边框叠在一起很难看。这里关掉原生外观，改成背景自绘小箭头 +
+ * 内边距留位，一个干净的圆角框。
+ */
 .ind-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
   flex: 1;
+  min-width: 0;
   height: 22px;
-  padding: 0 4px;
+  padding: 0 20px 0 7px;
   border: 1px solid var(--border-strong);
   border-radius: 5px;
-  background: #fff;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 5'%3E%3Cpath d='M0.5 0.8l3.5 3.4 3.5-3.4' fill='none' stroke='%236b7280' stroke-width='1.1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 8px 5px;
   color: var(--text);
   font-size: 11.5px;
   font-family: inherit;
+  line-height: 20px;
+  text-align: left;
   outline: none;
   cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ind-select::-ms-expand {
+  display: none;
+}
+
+.ind-select:hover {
+  border-color: var(--text-3);
 }
 
 .ind-select:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
 }
 
-/* 主图指标面板：多选小方块，换行排布 */
+/* 主图指标面板比副图面板宽一点，容纳「主图指标」四字标签 */
 .ind-pop-main {
   width: 216px;
 }

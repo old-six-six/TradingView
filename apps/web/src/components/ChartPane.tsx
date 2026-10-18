@@ -1567,7 +1567,7 @@ export default function ChartPane() {
                     value={mainKind ?? 'NONE'}
                     onChange={(e) => setMainKind(e.target.value === 'NONE' ? null : (e.target.value as MainIndicator))}
                   >
-                    <option value="NONE">无（只留 K 线）</option>
+                    <option value="NONE">无</option>
                     {MAIN_INDICATORS.map((k) => (
                       <option key={k} value={k}>
                         {MAIN_LABELS[k]}
@@ -1658,7 +1658,7 @@ export default function ChartPane() {
                   >
                     {Array.from({ length: MAX_SUB_PANES + 1 }, (_, n) => (
                       <option key={n} value={n}>
-                        {n === 0 ? '0（只留 K 线与成交量）' : `${n} 个`}
+                        {n}
                       </option>
                     ))}
                   </select>
