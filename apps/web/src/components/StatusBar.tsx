@@ -4,7 +4,7 @@ import { useStore } from '../store';
 import { backFromMarket } from '../nav';
 
 export default function StatusBar() {
-  const { connected, stale, quotes, lastTs, items, market, marketStat } = useStore();
+  const { connected, stale, quotes, lastTs, market, marketStat } = useStore();
   const [health, setHealth] = useState<Record<string, any> | null>(null);
 
   useEffect(() => {
@@ -63,9 +63,9 @@ export default function StatusBar() {
       {!market && <span>缓存 {Object.keys(quotes).length} 只</span>}
       {!market && <span>更新 {t}</span>}
       {stale && <span style={{ color: 'var(--down)' }}>降级中</span>}
-      <span style={{ marginLeft: 'auto' }}>
-        {market ? 'Esc 返回 · 点任意行看 K 线' : `自选 ${items.length} · ↑↓ 切换 · 空格刷新`}
-      </span>
+      {market && (
+        <span style={{ marginLeft: 'auto' }}>Esc 返回 · 点任意行看 K 线</span>
+      )}
     </div>
   );
 }
