@@ -28,29 +28,8 @@ import WatchAddModal from './WatchAddModal';
 import PosMenu from './PosMenu';
 import BoardMenu from './BoardMenu';
 import { watchEntryFolder } from '../sideOrder';
+import { BARS_ON_SCREEN, PERIODS } from '../chartPresets';
 import { MARKET_POS_LABEL } from './MarketPage';
-
-const PERIODS: Array<{ key: string; label: string }> = [
-  { key: 'minute', label: '分时' },
-  { key: 'm5', label: '5分' },
-  { key: 'm15', label: '15分' },
-  { key: 'm30', label: '30分' },
-  { key: 'm60', label: '60分' },
-  { key: 'day', label: '日K' },
-  { key: 'week', label: '周K' },
-  { key: 'month', label: '月K' },
-];
-
-/** 各周期一屏默认显示的 K 线根数，取同花顺的观感 */
-const BARS_ON_SCREEN: Record<string, number> = {
-  m5: 240,
-  m15: 176,
-  m30: 128,
-  m60: 96,
-  day: 150,
-  week: 140,
-  month: 120,
-};
 
 const SUB_INDICATORS = ['MACD', 'KDJ', 'RSI', 'CYHT'] as const;
 type SubIndicator = (typeof SUB_INDICATORS)[number];

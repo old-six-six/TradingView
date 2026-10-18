@@ -11,6 +11,7 @@ import {
 } from 'lightweight-charts';
 import { api, type Bar, type MinutePoint, type Quote } from '../api';
 import { gotoMarketFromIndex } from '../nav';
+import { isIntraday, PERIODS } from '../chartPresets';
 import type { IndexRef } from '../store';
 import { cls, fmtNum, fmtPct } from '../fmt';
 
@@ -31,20 +32,6 @@ const VOLUME_FORMAT = {
   },
   minMove: 1,
 };
-
-const PERIODS: Array<{ key: string; label: string }> = [
-  { key: 'minute', label: '分时' },
-  { key: 'm5', label: '5分' },
-  { key: 'm15', label: '15分' },
-  { key: 'm30', label: '30分' },
-  { key: 'm60', label: '60分' },
-  { key: 'day', label: '日K' },
-  { key: 'week', label: '周K' },
-  { key: 'month', label: '月K' },
-];
-
-/** 分钟周期的时间轴要显示 HH:MM，日线以上只显示日期（注意 month 不以 m+数字 论） */
-const isIntraday = (p: string) => p === 'minute' || /^m\d+$/.test(p);
 
 function tsOf(dateStr: string): number {
   const m = (dateStr ?? '').trim();

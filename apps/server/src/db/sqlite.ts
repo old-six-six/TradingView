@@ -44,6 +44,19 @@ CREATE TABLE IF NOT EXISTS indicator_daily (
   PRIMARY KEY (symbol, date)
 );
 
+-- 全市场日 K 回填的断点：一只票一行，重跑时按它跳过已完成的
+CREATE TABLE IF NOT EXISTS kline_sync (
+  symbol TEXT PRIMARY KEY,
+  last_date TEXT,
+  bars INTEGER,
+  source TEXT,
+  -- ok / empty / error：error 的会在下一轮重试
+  status TEXT,
+  error TEXT,
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_kline_sync_status ON kline_sync(status, updated_at);
+
 CREATE TABLE IF NOT EXISTS watchlist (
   symbol TEXT PRIMARY KEY,
   name TEXT,
@@ -145,6 +158,8 @@ export async function initDb(): Promise<void> {
   dbc.exec('PRAGMA journal_mode = MEMORY');
   dbc.exec('PRAGMA synchronous = OFF');
   dbc.exec('PRAGMA foreign_keys = ON');
+  // 回填任务和接口可能同时写：等一会儿锁，别一撞就抛 SQLITE_BUSY
+  dbc.exec('PRAGMA busy_timeout = 5000');
   dbc.exec(SCHEMA);
   migrate();
 }

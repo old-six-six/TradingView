@@ -1,9 +1,5 @@
-import { fetchKline, fetchKlineDeep, KLINE_PAGE } from '../sources/tencent.js';
-import { fetchKlineFull } from '../sources/eastmoney.js';
-import { upsertDailyBars, upsertIndicators, getDailyBars } from '../db/repo.js';
-import { calcIndicators } from '../engine/indicator.js';
-import { DAILY_BARS, FULL_HISTORY } from '../config.js';
-import type { Bar } from '../types.js';
+import { refreshDailyBars } from './kline.js';
+import { DAILY_BARS } from '../config.js';
 
 export interface SyncResult {
   symbol: string;
@@ -14,39 +10,16 @@ export interface SyncResult {
 }
 
 /**
- * 单只票的日 K 全量刷新 + 指标重算。
- *
- * 库里没有历史时才翻页抓「上市以来全部」（腾讯单次硬上限 640 根），
- * 已有历史就只补最近一页，避免每次启动都打出几十个请求。腾讯两条路都
- * 失败时退回东财。
+ * 单只票的日 K 刷新 + 指标重算。
+ * 具体取数策略（缓存优先、补最新一页、前复权漂移重抓）在 service/kline.ts，
+ * 这里只负责把异常收成结果对象，供启动流程和批量同步使用。
  */
 export async function syncOne(symbol: string, count = DAILY_BARS): Promise<SyncResult> {
-  const stored = await getDailyBars(symbol, 0);
-  let bars: Bar[] = [];
-  let source = 'tencent';
   try {
-    bars = stored.length
-      ? await fetchKline(symbol, 'day', Math.max(count, KLINE_PAGE))
-      : await fetchKlineDeep(symbol, 'day', FULL_HISTORY);
+    const r = await refreshDailyBars(symbol, { count });
+    return { symbol, ok: r.bars > 0, bars: r.bars, source: r.source };
   } catch (e) {
-    source = 'eastmoney';
-    try {
-      bars = await fetchKlineFull(symbol, 'day', FULL_HISTORY);
-    } catch {
-      return { symbol, ok: false, bars: 0, source, error: (e as Error).message };
-    }
-  }
-  if (!bars.length) return { symbol, ok: false, bars: 0, source, error: '接口返回空' };
-
-  try {
-    await upsertDailyBars(symbol, bars);
-    // 指标按库里全部历史重算，均线/MACD 的起始段才正确
-    const all = await getDailyBars(symbol, 0);
-    const ind = calcIndicators(all);
-    await upsertIndicators(symbol, ind);
-    return { symbol, ok: true, bars: bars.length, source };
-  } catch (e) {
-    return { symbol, ok: false, bars: 0, source, error: (e as Error).message };
+    return { symbol, ok: false, bars: 0, error: (e as Error).message };
   }
 }
 

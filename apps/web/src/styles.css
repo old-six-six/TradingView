@@ -1594,6 +1594,29 @@ button {
   flex-shrink: 0;
 }
 
+/* 状态栏里的「历史回填」：跑着是蓝字，待补是虚线可点，齐了就是普通灰字 */
+.sb-hist {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-hist.on {
+  color: var(--accent);
+}
+
+.sb-hist.todo {
+  cursor: pointer;
+  padding: 1px 6px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-2);
+}
+
+.sb-hist.todo:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 .empty {
   padding: 40px 20px;
   text-align: center;

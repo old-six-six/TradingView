@@ -145,6 +145,23 @@ export interface MarketRow {
   time: string;
 }
 
+/** 全市场日 K 回填的状态（服务端 service/history.ts 的 HistoryState） */
+export interface HistoryState {
+  running: boolean;
+  total: number;
+  done: number;
+  ok: number;
+  failed: number;
+  skipped: number;
+  concurrency: number;
+  current: string;
+  startedAt: number | null;
+  finishedAt: number | null;
+  etaMs: number | null;
+  lastError: string;
+  coverage: { symbols: number; bars: number; newest: string | null };
+}
+
 const BASE = '';
 
 async function get<T>(url: string): Promise<T> {
@@ -241,4 +258,14 @@ export const api = {
       cached: boolean;
       rows: Array<{ symbol: string; code: string; name: string; price: number; changePct: number }>;
     }>(`/api/market/lite?board=${board}`),
+  /** 全市场日 K 回填的进度与覆盖情况 */
+  historyStatus: () => get<HistoryState>('/api/history/status'),
+  startHistory: (opts: { concurrency?: number; limit?: number; refresh?: boolean } = {}) =>
+    fetch('/api/history/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(opts),
+    }).then((r) => r.json() as Promise<HistoryState>),
+  stopHistory: () =>
+    fetch('/api/history/stop', { method: 'POST' }).then((r) => r.json() as Promise<HistoryState>),
 };

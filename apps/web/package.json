@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node ../../node_modules/vite/bin/vite.js",
     "build": "node ../../node_modules/vite/bin/vite.js build",
-    "preview": "node ../../node_modules/vite/bin/vite.js preview"
+    "preview": "node ../../node_modules/vite/bin/vite.js preview",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "lightweight-charts": "^5.0.0",
