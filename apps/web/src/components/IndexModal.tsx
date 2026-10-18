@@ -10,8 +10,11 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import { api, type Bar, type MinutePoint, type Quote } from '../api';
-import { gotoMarket } from '../nav';
+import { gotoMarketFromIndex } from '../nav';
+import type { IndexRef } from '../store';
 import { cls, fmtNum, fmtPct } from '../fmt';
+
+export type { IndexRef };
 
 const UP = '#d93026';
 const DOWN = '#12894f';
@@ -56,13 +59,6 @@ function tsOf(dateStr: string): number {
   return Date.UTC(y, mo - 1, d, hh, mi) / 1000;
 }
 
-export interface IndexRef {
-  symbol: string;
-  label: string;
-  full: string;
-  market: string;
-}
-
 /**
  * 顶栏五大板块指数弹窗：默认看分时，可切 5/15/30/60 分和日/周/月 K。
  * 用的是主图同一套 K 线接口（指数代码如 sh000001 直接支持），
@@ -82,10 +78,13 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any>[]>([]);
 
-  // Esc 关闭
+  // Esc 关闭。忽略「本组件刚挂载前」就发生的那一下 Esc：
+  // 从列表页 Esc 退回弹窗时，是同一个键盘事件把弹窗重新打开的，不能被它顺手再关掉
   useEffect(() => {
+    const born = performance.now();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape' || e.timeStamp < born) return;
+      onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -339,11 +338,9 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
           <span className="im-tag">{info.full}</span>
           <button
             className="im-stocks"
-            onClick={() => {
-              gotoMarket(info.market);
-              onClose();
-            }}
-            title={`查看${info.full}全部股票`}
+            // 「成分股」算下一层：记住这个弹窗，列表页按 Esc / 返回图表就弹回来
+            onClick={() => gotoMarketFromIndex(info)}
+            title={`查看${info.full}全部股票（Esc 返回本页）`}
           >
             成分股 →
           </button>

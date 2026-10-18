@@ -25,6 +25,14 @@ export interface BoardLiteRow {
 /** 左侧板块列表的排序方式：按代码升序，或按涨幅从高到低 */
 export type SideSort = 'code' | 'pct';
 
+/** 顶栏五大指数弹窗要看的指数：代码、短名、全称、对应板块 key */
+export interface IndexRef {
+  symbol: string;
+  label: string;
+  full: string;
+  market: string;
+}
+
 /** 按指定方式排序：代码升序 / 涨幅从高到低（涨幅榜的惯用方向） */
 export function sortBoardRows(rows: BoardLiteRow[], sort: SideSort): BoardLiteRow[] {
   const list = [...rows];
@@ -66,6 +74,13 @@ interface State {
   boardRows: { board: string; rows: BoardLiteRow[]; at: number } | null;
   /** 左侧板块列表的排序方式，默认按代码 */
   sideSort: SideSort;
+  /** 顶栏五大指数弹窗当前打开的那只；null 表示没开 */
+  indexModal: IndexRef | null;
+  /**
+   * 从指数弹窗点「成分股」进的列表页时记下弹窗本身。
+   * 列表页按 Esc / 返回图表就先把这个弹窗还原，等于原路退回去。
+   */
+  indexReturn: IndexRef | null;
   toggleSidebar: () => void;
   stale: boolean;
   connected: boolean;
@@ -81,6 +96,8 @@ interface State {
   setEntry: (b: string | null) => void;
   setBoardRows: (m: { board: string; rows: BoardLiteRow[]; at: number } | null) => void;
   setSideSort: (s: SideSort) => void;
+  setIndexModal: (r: IndexRef | null) => void;
+  setIndexReturn: (r: IndexRef | null) => void;
   setMarketStat: (s: MarketStat | null) => void;
   setConnected: (v: boolean) => void;
 }
@@ -97,6 +114,8 @@ export const useStore = create<State>((set) => ({
   boardRows: null,
   // 每次打开都回到代码顺序，不记上次的选择
   sideSort: 'code',
+  indexModal: null,
+  indexReturn: null,
   sidebar: loadSidebar(),
   toggleSidebar: () =>
     set((s) => {
@@ -143,6 +162,8 @@ export const useStore = create<State>((set) => ({
   setEntry: (entry) => set({ entry }),
   setBoardRows: (boardRows) => set({ boardRows }),
   setSideSort: (sideSort) => set({ sideSort }),
+  setIndexModal: (indexModal) => set({ indexModal }),
+  setIndexReturn: (indexReturn) => set({ indexReturn }),
   setMarketStat: (marketStat) => set({ marketStat }),
   setConnected: (connected) => set({ connected }),
 }));

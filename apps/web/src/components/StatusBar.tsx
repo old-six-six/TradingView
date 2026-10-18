@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
-import { backToChart } from '../nav';
+import { backFromMarket } from '../nav';
 
 export default function StatusBar() {
   const { connected, stale, quotes, lastTs, items, market, marketStat } = useStore();
@@ -24,7 +24,7 @@ export default function StatusBar() {
     <div className="statusbar">
       {market ? (
         <>
-          <span className="sb-back" onClick={backToChart} title="返回图表（Esc）">
+          <span className="sb-back" onClick={backFromMarket} title="返回图表（Esc）">
             ← 返回图表
           </span>
           <span className="sb-cur">{marketStat?.label ?? market}</span>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { api, type Quote } from './api';
 import { useStore, sortBoardRows } from './store';
 import { sectionSymbols, isWatchEntry, watchEntryFolder, watchFolderRows, watchSections } from './sideOrder';
-import { backToChart } from './nav';
+import { backFromMarket } from './nav';
 import TopBar from './components/TopBar';
 import WatchList from './components/WatchList';
 import BoardSide from './components/BoardSide';
@@ -216,11 +216,11 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      // 列表页里 Esc 退回图表
+      // 列表页里 Esc 退回上一层：从指数弹窗的「成分股」进来的就退回那个弹窗，否则回图表
       if (e.key === 'Escape') {
         if (useStore.getState().market) {
           e.preventDefault();
-          backToChart();
+          backFromMarket();
         }
         return;
       }

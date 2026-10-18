@@ -3,7 +3,7 @@ import { api, type Quote } from '../api';
 import { useStore } from '../store';
 import { registerSearchFocus } from '../searchBus';
 import { cls, fmtNum, fmtPct } from '../fmt';
-import IndexModal, { type IndexRef } from './IndexModal';
+import IndexModal from './IndexModal';
 
 const INDEXES = [
   { symbol: 'sh000001', label: '上证', market: 'sh_main', full: '上证主板' },
@@ -49,13 +49,21 @@ function saveRecent(list: Recent[]) {
 }
 
 export default function TopBar() {
-  const { connected, stale, items, setItems, select, market } = useStore();
+  const {
+    connected,
+    stale,
+    items,
+    setItems,
+    select,
+    market,
+    indexModal,
+    setIndexModal,
+    setIndexReturn,
+  } = useStore();
   const [idx, setIdx] = useState<Record<string, Quote>>({});
   const [kw, setKw] = useState('');
   const [results, setResults] = useState<Array<{ symbol: string; code: string; name: string }>>([]);
   const [open, setOpen] = useState(false);
-  /** 点顶栏指数弹窗：默认看分时，可切分钟/日周月 K */
-  const [idxOpen, setIdxOpen] = useState<IndexRef | null>(null);
   const [recent, setRecent] = useState<Recent[]>(loadRecent);
   const timer = useRef<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -231,7 +239,11 @@ export default function TopBar() {
             <span
               key={i.symbol}
               className={`idx-item${market === i.market ? ' on' : ''}`}
-              onClick={() => setIdxOpen(i)}
+              onClick={() => {
+                // 这是自己主动点开的弹窗，之前挂着的「返回某个弹窗」就不作数了
+                setIndexReturn(null);
+                setIndexModal(i);
+              }}
               title={`查看${i.full}分时（可切分钟/日周月K）`}
             >
               {i.label}{' '}
@@ -254,7 +266,7 @@ export default function TopBar() {
         </span>
       </div>
 
-      {idxOpen && <IndexModal info={idxOpen} onClose={() => setIdxOpen(null)} />}
+      {indexModal && <IndexModal info={indexModal} onClose={() => setIndexModal(null)} />}
     </div>
   );
 }
