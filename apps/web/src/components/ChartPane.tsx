@@ -11,6 +11,8 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import { api, type Bar, type BoardKind, type IndicatorSeries, type MinutePoint, type StockBoard } from '../api';
+import { calcSupportPressure, type SupportPressure } from '../supportPressure';
+import { StickLinesPrimitive } from '../stickLines';
 import { useStore } from '../store';
 import { cls, fmtAmount, fmtNum, fmtPct, fmtVolume } from '../fmt';
 import BoardModal, { type BoardRef } from './BoardModal';
@@ -76,21 +78,66 @@ const MA_LABELS = ['MA5', 'MA10', 'MA20', 'MA60'] as const;
 const MA_STORE_KEY = 'tv.maVisible';
 
 /** 主图指标为单选：同一时间只挂一个，剩下的位置留给 K 线 */
-const MAIN_INDICATORS = ['MA', 'BOLL'] as const;
+const MAIN_INDICATORS = ['MA', 'BOLL', 'SUP'] as const;
 type MainIndicator = (typeof MAIN_INDICATORS)[number];
 /** null 表示主图不显示任何指标，只留 K 线与成交量 */
 type MainKind = MainIndicator | null;
-const MAIN_LABELS: Record<MainIndicator, string> = { MA: '均线', BOLL: 'BOLL' };
+const MAIN_LABELS: Record<MainIndicator, string> = {
+  MA: '均线',
+  BOLL: 'BOLL',
+  SUP: '支撑压力',
+};
 const MAIN_STORE_KEY = 'tv.mainInd';
 /** 布林带取洋红/青，和四条均线的金蓝紫灰拉开距离 */
 const BOLL_COLORS = ['#e11d8f', '#0d9488', '#e11d8f'];
+/**
+ * 支撑压力（大智慧）配色：原码只指定了铁底线红、成本线绿、价值中枢黄，
+ * 其余取白。白线在白底上看不见，风险线改用中性灰，必卖线用橙、底线用蓝，
+ * 都和 K 线的红绿拉开距离。
+ */
+const SUP_COLORS = {
+  sell: '#ea580c',
+  risk: '#64748b',
+  cost: '#059669',
+  mid: '#ca8a04',
+  floor: '#2563eb',
+  iron: '#dc2626',
+};
+/** 持仓柱（原码默认白色，白底下改成中性灰），减仓柱沿用原码的黄色 */
+const SUP_HOLD_COLOR = 'rgba(148,163,184,0.55)';
+const SUP_REDUCE_COLOR = 'rgba(240,180,41,0.8)';
+/** 竖柱宽度占 K 线间距的比例：比原码的 0.5 再细一点，免得糊住 K 线 */
+const SUP_STICK_RATIO = 0.34;
+/**
+ * 必卖线在成本线 ×1.3、铁底线在 ×0.7，一起参与价格轴自适应会把 K 线压扁，
+ * 所以给一个「全部 6 条 / 核心 4 条」的开关，默认按原码画全。
+ */
+type SupBands = 'all' | 'core';
+const SUP_BANDS_KEY = 'tv.supBands';
+function loadSupBands(): SupBands {
+  try {
+    return localStorage.getItem(SUP_BANDS_KEY) === 'core' ? 'core' : 'all';
+  } catch {
+    return 'all';
+  }
+}
+const SUP_LABELS = [
+  { key: 'sell', name: '必卖', color: SUP_COLORS.sell },
+  { key: 'risk', name: '风险', color: SUP_COLORS.risk },
+  { key: 'cost', name: '成本', color: SUP_COLORS.cost },
+  { key: 'mid', name: '中枢', color: SUP_COLORS.mid },
+  { key: 'floor', name: '底线', color: SUP_COLORS.floor },
+  { key: 'iron', name: '铁底', color: SUP_COLORS.iron },
+] as const;
+/** 核心 4 条：去掉 1.3× / 0.7× 两条极值带 */
+const SUP_CORE_KEYS = new Set(['risk', 'cost', 'mid', 'floor']);
 
 function loadMainKind(): MainKind {
   try {
     const raw = localStorage.getItem(MAIN_STORE_KEY);
     if (raw === null) return 'MA';
     const v = JSON.parse(raw);
-    if (v === null || v === 'MA' || v === 'BOLL') return v as MainKind;
+    if (v === null || v === 'MA' || v === 'BOLL' || v === 'SUP') return v as MainKind;
     // 兼容旧版多选格式 { MA: boolean, BOLL: boolean }
     if (v && typeof v === 'object') {
       if (v.BOLL) return 'BOLL';
@@ -211,6 +258,8 @@ export default function ChartPane() {
   const [mainKind, setMainKind] = useState<MainKind>(loadMainKind);
   const [mainOpen, setMainOpen] = useState(false);
   const mainPopRef = useRef<HTMLSpanElement>(null);
+  /** 支撑压力画几条带：默认按原码画全 6 条 */
+  const [supBands, setSupBands] = useState<SupBands>(loadSupBands);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [bars, setBars] = useState<Bar[]>([]);
@@ -236,6 +285,15 @@ export default function ChartPane() {
 
   const q = quotes[selected];
   const name = q?.name || items.find((i) => i.symbol === selected)?.name || '';
+
+  /**
+   * 支撑压力是纯价格指标（不需要服务端那套指标序列），按当前周期的 K 线现算，
+   * 切周/月线时也跟得上；几千根算一遍不到 5ms。
+   */
+  const sup = useMemo(
+    () => (mainKind === 'SUP' && bars.length ? calcSupportPressure(bars) : null),
+    [mainKind, bars],
+  );
 
   useEffect(() => {
     if (!selected) {
@@ -304,6 +362,14 @@ export default function ChartPane() {
       /* 忽略隐私模式下的写入失败 */
     }
   }, [mainKind]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SUP_BANDS_KEY, supBands);
+    } catch {
+      /* 忽略隐私模式下的写入失败 */
+    }
+  }, [supBands]);
 
   useEffect(() => {
     try {
@@ -788,7 +854,7 @@ export default function ChartPane() {
     if (period === 'minute' && minute) {
       renderMinute(chart, minute);
     } else if (bars.length) {
-      renderKline(chart, bars, ind, { kind: mainKind, ma: maVisible });
+      renderKline(chart, bars, ind, { kind: mainKind, ma: maVisible, sup, bands: supBands });
     }
 
     window.setTimeout(() => {
@@ -809,7 +875,7 @@ export default function ChartPane() {
       viewRef.current.key = viewKey;
       viewRef.current.bars = bars;
     }, 0);
-  }, [bars, ind, minute, period, subPanes, selected, maVisible, mainKind]);
+  }, [bars, ind, minute, period, subPanes, selected, maVisible, mainKind, supBands]);
 
   /** 光标所在 bar（无光标时取最后一根），供图例显示 */
   const legend = useMemo(() => {
@@ -833,6 +899,17 @@ export default function ChartPane() {
       boll: s
         ? [at(s.bollUp), at(s.bollMid), at(s.bollDn)]
         : [null, null, null],
+      sup: sup
+        ? {
+            sell: at(sup.sell),
+            risk: at(sup.risk),
+            cost: at(sup.cost),
+            mid: at(sup.mid),
+            floor: at(sup.floor),
+            iron: at(sup.iron),
+            diff: at(sup.diff),
+          }
+        : null,
       sub: s
         ? {
             dif: at(s.macdDif),
@@ -847,7 +924,7 @@ export default function ChartPane() {
         : null,
       hovered: hoverIdx !== null,
     };
-  }, [bars, ind, hoverIdx]);
+  }, [bars, ind, hoverIdx, sup]);
 
   /** 分时图例：光标处的价格、均价、涨跌幅、成交量 */
   const minuteLegend = useMemo(() => {
@@ -989,7 +1066,7 @@ export default function ChartPane() {
     chart: IChartApi,
     list: Bar[],
     indicators: IndicatorSeries | null,
-    main: { kind: MainKind; ma: boolean[] },
+    main: { kind: MainKind; ma: boolean[]; sup: SupportPressure | null; bands: SupBands },
   ) {
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: UP,
@@ -1017,29 +1094,58 @@ export default function ChartPane() {
     list.forEach((b, i) => idxMap.set(toTs(b.date), i));
     timeIdxRef.current = idxMap;
 
-    if (indicators) {
-      const line = (values: number[], color: string) => {
-        const s = chart.addSeries(
-          LineSeries,
-          {
-            color,
-            lineWidth: 1,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false,
-          },
-          0,
-        );
-        const pts: Array<{ time: UTCTimestamp; value: number }> = [];
-        for (let i = 0; i < values.length && i < list.length; i++) {
-          const v = values[i];
-          if (!Number.isFinite(v)) continue;
-          pts.push({ time: toTs(list[i].date) as UTCTimestamp, value: v });
-        }
-        s.setData(pts);
-        seriesRef.current.push(s);
-        return s;
-      };
+    /** 主图加一条线；values 与 list 等长，NaN 自动跳过 */
+    const line = (
+      values: number[],
+      color: string,
+      lineWidth: 1 | 2 | 3 | 4 = 1,
+      lineStyle: LineStyle = LineStyle.Solid,
+    ) => {
+      const s = chart.addSeries(
+        LineSeries,
+        {
+          color,
+          lineWidth,
+          lineStyle,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        },
+        0,
+      );
+      const pts: Array<{ time: UTCTimestamp; value: number }> = [];
+      for (let i = 0; i < values.length && i < list.length; i++) {
+        const v = values[i];
+        if (!Number.isFinite(v)) continue;
+        pts.push({ time: toTs(list[i].date) as UTCTimestamp, value: v });
+      }
+      s.setData(pts);
+      seriesRef.current.push(s);
+      return s;
+    };
+
+    if (main.kind === 'SUP' && main.sup) {
+      // 大智慧「支撑压力」：六条成本/风险带 + 持仓（灰）与减仓（黄）竖柱
+      const s = main.sup;
+      // 1.3× / 0.7× 两条极值带只在「全部 6 条」时画：它们参与价格轴自适应，
+      // 一起画上会把 K 线压成一条细带
+      if (main.bands === 'all') line(s.sell, SUP_COLORS.sell, 2);
+      line(s.risk, SUP_COLORS.risk);
+      line(s.cost, SUP_COLORS.cost, 2);
+      line(s.mid, SUP_COLORS.mid, 1, LineStyle.Dashed);
+      line(s.floor, SUP_COLORS.floor);
+      if (main.bands === 'all') line(s.iron, SUP_COLORS.iron, 2, LineStyle.Dashed);
+      candles.attachPrimitive(
+        new StickLinesPrimitive({
+          top: s.slow,
+          bottom: s.fast,
+          diff: s.diff,
+          holdColor: SUP_HOLD_COLOR,
+          reduceColor: SUP_REDUCE_COLOR,
+          widthRatio: SUP_STICK_RATIO,
+        }),
+      );
+    } else if (indicators) {
       if (main.kind === 'MA') {
         const maSeries = [indicators.ma5, indicators.ma10, indicators.ma20, indicators.ma60];
         maSeries.forEach((vals, i) => {
@@ -1136,6 +1242,7 @@ export default function ChartPane() {
   const isMinute = period === 'minute';
   const showMa = !isMinute && !!legend && mainKind === 'MA';
   const showBoll = !isMinute && !!legend && mainKind === 'BOLL';
+  const showSup = !isMinute && !!legend && mainKind === 'SUP';
 
   return (
     <div className="chart-col">
@@ -1360,6 +1467,27 @@ export default function ChartPane() {
                     ))}
                   </div>
                 </div>
+                {mainKind === 'SUP' && (
+                  <div className="ind-pop-row">
+                    <i>价格带</i>
+                    <div className="ind-chips">
+                      <button
+                        className={supBands === 'all' ? 'on' : ''}
+                        onClick={() => setSupBands('all')}
+                        title="按原码画全：含 1.3× 必卖线与 0.7× 铁底线，价格轴会被拉开"
+                      >
+                        全部 6 条
+                      </button>
+                      <button
+                        className={supBands === 'core' ? 'on' : ''}
+                        onClick={() => setSupBands('core')}
+                        title="只留风险/成本/中枢/底线，K 线看得清"
+                      >
+                        核心 4 条
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="ind-pop-tip">
                   {mainKind === 'MA' ? (
                     <span className="ind-link" onClick={toggleAllMa}>
@@ -1367,6 +1495,10 @@ export default function ChartPane() {
                     </span>
                   ) : mainKind === 'BOLL' ? (
                     '布林带 (20, 2)，中轨即 MA20'
+                  ) : mainKind === 'SUP' ? (
+                    <span title="大智慧原码：EMA(SLOPE(C,21)×20+C,55) 与 EMA(C,3) 之间画竖柱">
+                      6 条成本/风险带，灰柱＝持仓、黄柱＝减仓
+                    </span>
                   ) : (
                     '主图只留 K 线与成交量'
                   )}
@@ -1493,7 +1625,7 @@ export default function ChartPane() {
                 <b className="num">{fmtVolume(legend.b.volume)}</b>
               </span>
             </div>
-            {(showMa || showBoll) && (
+            {(showMa || showBoll || showSup) && (
               <div className="legend-row legend-ma">
                 {showMa &&
                   MA_LABELS.map((label, i) => (
@@ -1518,6 +1650,23 @@ export default function ChartPane() {
                         {tag} <b className="num">{fmtNum(legend.boll[i])}</b>
                       </span>
                     ))}
+                  </>
+                )}
+                {showSup && legend.sup && (
+                  <>
+                    <span className="legend-tag">支撑压力</span>
+                    {SUP_LABELS.filter((o) => supBands === 'all' || SUP_CORE_KEYS.has(o.key)).map(
+                      (o) => (
+                        <span key={o.key} style={{ color: o.color }}>
+                          {o.name} <b className="num">{fmtNum(legend.sup?.[o.key] ?? null)}</b>
+                        </span>
+                      ),
+                    )}
+                    <span
+                      style={{ color: (legend.sup.diff ?? 0) >= 0 ? SUP_HOLD_COLOR : SUP_REDUCE_COLOR }}
+                    >
+                      {(legend.sup.diff ?? 0) >= 0 ? '持仓' : '减仓'}
+                    </span>
                   </>
                 )}
               </div>
