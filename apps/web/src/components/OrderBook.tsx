@@ -1,8 +1,34 @@
+import { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { cls, fmtNum, fmtPct } from '../fmt';
 
+/** 两位数补零 */
+const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
+const hhmmss = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+/** 每秒走一次的本机时钟，供盘口标题右侧显示 */
+function useClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    // 对齐到整秒再起跳，避免与系统秒数错位
+    let timer = 0;
+    const tick = () => setNow(new Date());
+    const wait = 1000 - (Date.now() % 1000);
+    const boot = window.setTimeout(() => {
+      tick();
+      timer = window.setInterval(tick, 1000);
+    }, wait);
+    return () => {
+      window.clearTimeout(boot);
+      window.clearInterval(timer);
+    };
+  }, []);
+  return now;
+}
+
 export default function OrderBook() {
   const { quotes, selected, items } = useStore();
+  const now = useClock();
   const q = quotes[selected];
   const name = q?.name || items.find((i) => i.symbol === selected)?.name || '--';
 
@@ -30,7 +56,12 @@ export default function OrderBook() {
 
   return (
     <div className="rightbar">
-      <div className="section-title">五档盘口</div>
+      <div className="section-title">
+        <span>五档盘口</span>
+        <span className="sec-clock" title={`本机时间 · 行情快照 ${q.time}`}>
+          {hhmmss(now)}
+        </span>
+      </div>
       <div className="book">
         <div className="book-price-lg">
           <span className={`num ${cls(q.changePct)}`} style={{ fontSize: 20, fontWeight: 600 }}>

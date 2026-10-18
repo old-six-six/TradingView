@@ -1036,10 +1036,23 @@ button {
 }
 
 .section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   padding: 10px 12px 6px;
   font-size: 12px;
   color: var(--text-3);
   border-bottom: 1px solid var(--border);
+}
+
+/* 盘口标题右侧的本机时钟，等宽数字避免每秒抖动 */
+.sec-clock {
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3px;
+  cursor: default;
 }
 
 /* ---------- 底栏 ---------- */
