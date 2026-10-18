@@ -13,6 +13,14 @@ import {
 import { api, type Bar, type BoardKind, type IndicatorSeries, type MinutePoint, type StockBoard } from '../api';
 import { calcSupportPressure, type SupportPressure } from '../supportPressure';
 import { StickLinesPrimitive } from '../stickLines';
+import {
+  calcFortune,
+  FORTUNE_BOTTOM,
+  FORTUNE_MID,
+  FORTUNE_TOP,
+  type Fortune,
+} from '../fortune';
+import { BandFillPrimitive } from '../bandFill';
 import { useStore } from '../store';
 import { cls, fmtAmount, fmtNum, fmtPct, fmtVolume } from '../fmt';
 import BoardModal, { type BoardRef } from './BoardModal';
@@ -42,9 +50,15 @@ const BARS_ON_SCREEN: Record<string, number> = {
 /** 图表右侧留白（根），与 timeScale.rightOffset 保持一致 */
 const RIGHT_PAD = 4;
 
-const SUB_INDICATORS = ['MACD', 'KDJ', 'RSI'] as const;
+const SUB_INDICATORS = ['MACD', 'KDJ', 'RSI', 'CYHT'] as const;
 type SubIndicator = (typeof SUB_INDICATORS)[number];
-/** 副图最多 3 个，正好对应 3 种可选指标 */
+const SUB_LABELS: Record<SubIndicator, string> = {
+  MACD: 'MACD',
+  KDJ: 'KDJ',
+  RSI: 'RSI',
+  CYHT: '财运亨通',
+};
+/** 副图最多 4 个，正好对应 4 种可选指标 */
 const MAX_SUB_PANES = SUB_INDICATORS.length;
 const SUB_STORE_KEY = 'tv.subPanes';
 
@@ -131,6 +145,23 @@ const SUP_LABELS = [
 ] as const;
 /** 核心 4 条：去掉 1.3× / 0.7× 两条极值带 */
 const SUP_CORE_KEYS = new Set(['risk', 'cost', 'mid', 'floor']);
+
+/**
+ * 财运亨通（大智慧）配色：原码只给了两处填充色，
+ * 黄（FFFF00）盖在 80 之上、蓝（00AAFF）盖在 20 之下，这里都调成半透明，
+ * 免得把下面的 SK/SD 线条糊掉。三条水平线取红绿灰，和 K 线涨跌不冲突。
+ */
+const CYHT_COLORS = {
+  sk: '#c98a12',
+  sd: '#1f6feb',
+  buy: '#12894f',
+  sell: '#ea580c',
+  top: '#dc2626',
+  bottom: '#059669',
+  mid: '#94a3b8',
+};
+const CYHT_FILL_TOP = 'rgba(250,204,21,0.30)';
+const CYHT_FILL_BOTTOM = 'rgba(0,170,255,0.22)';
 
 function loadMainKind(): MainKind {
   try {
@@ -293,6 +324,16 @@ export default function ChartPane() {
   const sup = useMemo(
     () => (mainKind === 'SUP' && bars.length ? calcSupportPressure(bars) : null),
     [mainKind, bars],
+  );
+
+  /**
+   * 财运亨通同样是纯 K 线指标，按当前周期现算；只有挂了这块副图才算，
+   * 省下没必要的重复计算（三十来根窗口的滚动极值，几千根 1ms 内）。
+   */
+  const needFortune = subPanes.includes('CYHT');
+  const fortune = useMemo(
+    () => (needFortune && bars.length ? calcFortune(bars) : null),
+    [needFortune, bars],
   );
 
   useEffect(() => {
@@ -706,7 +747,7 @@ export default function ChartPane() {
     // 窗格数由数据决定：主图 + 成交量 + N 个副图，故不能依赖渲染闭包里的 subPanes
     const subCount = Math.max(0, panes.length - 2);
     // 副图越多，主图让一点空间，但保证副图至少留出能看清形态的高度
-    const main = subCount >= 3 ? 0.48 : subCount === 2 ? 0.52 : 0.55;
+    const main = subCount >= 4 ? 0.42 : subCount === 3 ? 0.46 : subCount === 2 ? 0.52 : 0.55;
     const vol = 0.14;
     const factors =
       panes.length <= 2
@@ -875,7 +916,7 @@ export default function ChartPane() {
       viewRef.current.key = viewKey;
       viewRef.current.bars = bars;
     }, 0);
-  }, [bars, ind, minute, period, subPanes, selected, maVisible, mainKind, supBands]);
+  }, [bars, ind, minute, period, subPanes, selected, maVisible, mainKind, supBands, fortune]);
 
   /** 光标所在 bar（无光标时取最后一根），供图例显示 */
   const legend = useMemo(() => {
@@ -922,9 +963,19 @@ export default function ChartPane() {
             r12: at(s.rsi12),
           }
         : null,
+      cyht: fortune
+        ? {
+            sk: at(fortune.sk),
+            sd: at(fortune.sd),
+            buy: at(fortune.buy),
+            sell: at(fortune.sell),
+            golden: fortune.golden[idx] === true,
+            dead: fortune.dead[idx] === true,
+          }
+        : null,
       hovered: hoverIdx !== null,
     };
-  }, [bars, ind, hoverIdx, sup]);
+  }, [bars, ind, hoverIdx, sup, fortune]);
 
   /** 分时图例：光标处的价格、均价、涨跌幅、成交量 */
   const minuteLegend = useMemo(() => {
@@ -1175,7 +1226,7 @@ export default function ChartPane() {
 
     if (indicators) {
       // 每个副图一个独立窗格：主图 0、成交量 1、副图从 2 起
-      subPanes.forEach((key, i) => renderSub(chart, indicators, list, 2 + i, key));
+      subPanes.forEach((key, i) => renderSub(chart, indicators, list, 2 + i, key, fortune));
     }
   }
 
@@ -1185,6 +1236,7 @@ export default function ChartPane() {
     list: Bar[],
     paneIndex: number,
     kind: SubIndicator,
+    fortune: Fortune | null,
   ) {
     const mk = (values: number[], color: string) => {
       const ser = chart.addSeries(
@@ -1233,9 +1285,91 @@ export default function ChartPane() {
       mk(s.kdjK, MA_COLORS[0]);
       mk(s.kdjD, MA_COLORS[1]);
       mk(s.kdjJ, MA_COLORS[2]);
-    } else {
+    } else if (kind === 'RSI') {
       mk(s.rsi6, MA_COLORS[0]);
       mk(s.rsi12, MA_COLORS[1]);
+    } else if (kind === 'CYHT') {
+      // 大智慧「财运亨通」：SK/SD + 80/50/20 三条水平线 + 两段 FILLRGN 填充
+      if (!fortune) return;
+      const f = fortune;
+
+      /**
+       * 副图价格轴钉死在 0~100：随机指标天然落在这个区间，
+       * 固定之后 80/50/20 三条线的位置不随窗口缩放漂移，和大智慧观感一致。
+       */
+      const mkFixed = (
+        values: number[],
+        color: string,
+        lineWidth: 1 | 2 = 1,
+        lineStyle: LineStyle = LineStyle.Solid,
+      ) => {
+        const ser = chart.addSeries(
+          LineSeries,
+          {
+            color,
+            lineWidth,
+            lineStyle,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+            autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
+          },
+          paneIndex,
+        );
+        const pts: Array<{ time: UTCTimestamp; value: number }> = [];
+        for (let i = 0; i < values.length && i < list.length; i++) {
+          const v = values[i];
+          if (!Number.isFinite(v)) continue;
+          pts.push({ time: toTs(list[i].date) as UTCTimestamp, value: v });
+        }
+        ser.setData(pts);
+        seriesRef.current.push(ser);
+        return ser;
+      };
+
+      // 逃顶 80（红虚）、楚河分界 50（灰点）、吸货 20（绿虚）
+      mkFixed(
+        list.map(() => FORTUNE_TOP),
+        CYHT_COLORS.top,
+        1,
+        LineStyle.Dashed,
+      );
+      mkFixed(
+        list.map(() => FORTUNE_MID),
+        CYHT_COLORS.mid,
+        1,
+        LineStyle.Dotted,
+      );
+      mkFixed(
+        list.map(() => FORTUNE_BOTTOM),
+        CYHT_COLORS.bottom,
+        1,
+        LineStyle.Dashed,
+      );
+      // 买进 22 / 金叉 40，卖出 78 / 死叉 60；原码是普通输出线，故画成阶梯线
+      mkFixed(f.buy, CYHT_COLORS.buy);
+      mkFixed(f.sell, CYHT_COLORS.sell);
+
+      const sdSer = mkFixed(f.sd, CYHT_COLORS.sd, 2);
+      mkFixed(f.sk, CYHT_COLORS.sk, 2);
+
+      // FILLRGN(sd,80,sd>80) 黄、FILLRGN(sd,20,sd<20) 蓝，挂在 SD 线上取同一套坐标
+      sdSer.attachPrimitive(
+        new BandFillPrimitive({
+          values: f.sd,
+          base: FORTUNE_TOP,
+          above: true,
+          color: CYHT_FILL_TOP,
+        }),
+      );
+      sdSer.attachPrimitive(
+        new BandFillPrimitive({
+          values: f.sd,
+          base: FORTUNE_BOTTOM,
+          above: false,
+          color: CYHT_FILL_BOTTOM,
+        }),
+      );
     }
   }
 
@@ -1527,7 +1661,7 @@ export default function ChartPane() {
                 <div className="ind-pop-row">
                   <i>副图数量</i>
                   <div className="ind-counts">
-                    {[0, 1, 2, 3].map((n) => (
+                    {Array.from({ length: MAX_SUB_PANES + 1 }, (_, n) => (
                       <button
                         key={n}
                         className={n === subPanes.length ? 'on' : ''}
@@ -1549,7 +1683,7 @@ export default function ChartPane() {
                     >
                       {SUB_INDICATORS.map((o) => (
                         <option key={o} value={o}>
-                          {o}
+                          {SUB_LABELS[o]}
                         </option>
                       ))}
                     </select>
@@ -1684,7 +1818,7 @@ export default function ChartPane() {
               style={{ top: (paneTops[2 + i] ?? 4) + 3 }}
             >
               <div className="legend-row legend-ma">
-                <span className="legend-tag">{key}</span>
+                <span className="legend-tag">{SUB_LABELS[key]}</span>
                 {key === 'MACD' && (
                   <>
                     <span style={{ color: MA_COLORS[0] }}>
@@ -1719,6 +1853,31 @@ export default function ChartPane() {
                     <span style={{ color: MA_COLORS[1] }}>
                       RSI12 <b className="num">{fmtNum(legend.sub!.r12)}</b>
                     </span>
+                  </>
+                )}
+                {key === 'CYHT' && legend.cyht && (
+                  <>
+                    <span style={{ color: CYHT_COLORS.sk }}>
+                      SK <b className="num">{fmtNum(legend.cyht.sk)}</b>
+                    </span>
+                    <span style={{ color: CYHT_COLORS.sd }}>
+                      SD <b className="num">{fmtNum(legend.cyht.sd)}</b>
+                    </span>
+                    <span style={{ color: CYHT_COLORS.buy }}>
+                      买进 <b className="num">{fmtNum(legend.cyht.buy)}</b>
+                    </span>
+                    <span style={{ color: CYHT_COLORS.sell }}>
+                      卖出 <b className="num">{fmtNum(legend.cyht.sell)}</b>
+                    </span>
+                    {legend.cyht.golden ? (
+                      <span style={{ color: CYHT_COLORS.buy, fontWeight: 600 }}>金叉</span>
+                    ) : legend.cyht.dead ? (
+                      <span style={{ color: CYHT_COLORS.sell, fontWeight: 600 }}>死叉</span>
+                    ) : (legend.cyht.sd ?? 50) > FORTUNE_TOP ? (
+                      <span style={{ color: CYHT_COLORS.top }}>逃顶区</span>
+                    ) : (legend.cyht.sd ?? 50) < FORTUNE_BOTTOM ? (
+                      <span style={{ color: CYHT_COLORS.bottom }}>吸货区</span>
+                    ) : null}
                   </>
                 )}
               </div>
