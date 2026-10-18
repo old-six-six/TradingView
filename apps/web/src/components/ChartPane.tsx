@@ -478,9 +478,6 @@ export default function ChartPane() {
     });
   const maAllOff = !maVisible.some(Boolean);
 
-  /** 选一个主图指标；再点一次同一个等于关掉（主图只留 K 线） */
-  const pickMain = (k: MainIndicator) => setMainKind((prev) => (prev === k ? null : k));
-
   useEffect(() => {
     if (!hostRef.current) return;
     const chart = createChart(hostRef.current, {
@@ -1564,26 +1561,19 @@ export default function ChartPane() {
             {mainOpen && (
               <div className="ind-pop ind-pop-main" onMouseDown={(e) => e.stopPropagation()}>
                 <div className="ind-pop-row">
-                  <i>指标</i>
-                  <div className="ind-chips">
+                  <i>主图指标</i>
+                  <select
+                    className="ind-select"
+                    value={mainKind ?? 'NONE'}
+                    onChange={(e) => setMainKind(e.target.value === 'NONE' ? null : (e.target.value as MainIndicator))}
+                  >
+                    <option value="NONE">无（只留 K 线）</option>
                     {MAIN_INDICATORS.map((k) => (
-                      <button
-                        key={k}
-                        className={mainKind === k ? 'on' : ''}
-                        onClick={() => pickMain(k)}
-                        title={mainKind === k ? `关闭${MAIN_LABELS[k]}` : `主图只显示${MAIN_LABELS[k]}`}
-                      >
+                      <option key={k} value={k}>
                         {MAIN_LABELS[k]}
-                      </button>
+                      </option>
                     ))}
-                    <button
-                      className={mainKind === null ? 'on' : ''}
-                      onClick={() => setMainKind(null)}
-                      title="主图只留 K 线与成交量"
-                    >
-                      无
-                    </button>
-                  </div>
+                  </select>
                 </div>
                 <div className="ind-pop-row">
                   <i>周期</i>
@@ -1660,18 +1650,18 @@ export default function ChartPane() {
               <div className="ind-pop" onMouseDown={(e) => e.stopPropagation()}>
                 <div className="ind-pop-row">
                   <i>副图数量</i>
-                  <div className="ind-counts">
+                  <select
+                    className="ind-select"
+                    value={subPanes.length}
+                    onChange={(e) => setSubCount(Number(e.target.value))}
+                    title="最多 4 个副图"
+                  >
                     {Array.from({ length: MAX_SUB_PANES + 1 }, (_, n) => (
-                      <button
-                        key={n}
-                        className={n === subPanes.length ? 'on' : ''}
-                        onClick={() => setSubCount(n)}
-                        title={n === 0 ? '只显示 K 线与成交量' : `${n} 个副图`}
-                      >
-                        {n}
-                      </button>
+                      <option key={n} value={n}>
+                        {n === 0 ? '0（只留 K 线与成交量）' : `${n} 个`}
+                      </option>
                     ))}
-                  </div>
+                  </select>
                 </div>
                 {subPanes.map((key, i) => (
                   <div className="ind-pop-row" key={i}>

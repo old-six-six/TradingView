@@ -698,33 +698,6 @@ button {
   flex-shrink: 0;
 }
 
-.ind-counts {
-  display: flex;
-  gap: 4px;
-}
-
-.ind-counts button {
-  width: 26px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  background: #fff;
-  color: var(--text-2);
-  font-size: 11.5px;
-  line-height: 1;
-}
-
-.ind-counts button:hover {
-  border-color: var(--text-3);
-}
-
-.ind-counts button.on {
-  background: var(--text);
-  border-color: var(--text);
-  color: #fff;
-}
-
 .ind-select {
   flex: 1;
   height: 22px;
@@ -748,9 +721,9 @@ button {
   width: 216px;
 }
 
-/* 主图面板的标签只需容纳两个字，收紧后让四个周期排成一行 */
+/* 主图面板标签容纳「主图指标」四字不折行 */
 .ind-pop-main .ind-pop-row > i {
-  width: 42px;
+  width: 54px;
 }
 
 .ind-chips {
