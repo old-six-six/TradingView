@@ -41,6 +41,15 @@ export default function StatusBar() {
         </>
       ) : null}
 
+      <a
+        className="sb-link"
+        href="https://l2.10jqka.com.cn/hottrack/public/dist/index.html#/marketCondition"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="同花顺 · 市场情绪（新窗口打开）"
+      >
+        同花顺·市场情绪 ↗
+      </a>
       <span>
         <span
           className="status-dot"

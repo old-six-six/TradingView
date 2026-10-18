@@ -1036,6 +1036,18 @@ button {
   color: var(--text);
 }
 
+/* 状态栏外链（同花顺市场情绪），保持 11px 灰底上的蓝色小字 */
+.sb-link {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sb-link:hover {
+  text-decoration: underline;
+}
+
 .sb-cur {
   color: var(--text);
   font-weight: 500;
