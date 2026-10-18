@@ -1928,9 +1928,7 @@ export default function ChartPane() {
         >
           {sidebar ? '◀ 左侧' : '▶ 左侧'}
         </span>
-        <span className="foot-hint">
-          ← → 移动光标　↑ ↓ 缩放　【 】{posLabel ? `${posLabel}内换股` : '换股'}
-        </span>
+        <span className="foot-hint">← → 移动光标　↑ ↓ 缩放　【 】切换股票</span>
         {posLabel && (
           <span
             className="foot-hint"
