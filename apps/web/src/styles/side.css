@@ -1,0 +1,120 @@
+/* ---------- 通用左侧列表（板块 / 自选共用） ---------- */
+/* 绝对定位渲染，行高与 SideList.tsx 里的 SIDE_ROW_H 必须一致 */
+.side-body {
+  position: relative;
+}
+
+.side-body > .side-grp,
+.side-body > .side-item,
+.side-body > .side-empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+/* 自选文件夹的组头，和板块列表共用同一套行样式 */
+.side-grp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 12px;
+  font-size: 11px;
+  color: var(--text-3);
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+}
+
+.side-grp:hover .watch-grp-del {
+  opacity: 1;
+}
+
+.side-empty {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.side-title {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-count {
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.watch-item.active {
+  background: var(--bg-soft);
+  border-left-color: var(--up);
+}
+
+.watch-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.watch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watch-sub {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 1px;
+}
+
+/* ---------- 左侧自选的分文件夹 ---------- */
+/* 组头本体在 .side-grp（通用列表里画），这里只剩组名/票数/删除按钮 */
+.watch-grp-name {
+  font-weight: 600;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watch-grp-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.watch-grp-del {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.watch-grp-del:hover {
+  background: var(--bg-hover);
+  color: var(--up);
+}
+
+/* 待确认状态：常亮变红，第二下才真删 */
+.watch-grp-del.pending {
+  opacity: 1;
+  color: var(--up);
+  border: 1px solid var(--up);
+}

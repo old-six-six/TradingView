@@ -162,6 +162,41 @@ export interface HistoryState {
   coverage: { symbols: number; bars: number; newest: string | null };
 }
 
+/** 数据源健康（服务端 sources/gateway.ts 的 sourceHealth） */
+export interface SourceHealth {
+  name: string;
+  ok: boolean;
+  failures: number;
+  lastError?: string;
+  latencyMs?: number;
+}
+
+/** /api/health 的返回，状态栏用它显示股票库数量与延迟 */
+export interface HealthInfo {
+  ok: boolean;
+  trading: boolean;
+  circuitOpen: boolean;
+  sources: SourceHealth[];
+  stocks: number;
+  marketCache: { size: number; at: number };
+  snapshotSize: number;
+}
+
+/** 持仓行（/api/positions 已把实时价与浮盈算好） */
+export interface PositionItem {
+  id: string;
+  symbol: string;
+  name: string;
+  shares: number;
+  cost_price: number;
+  open_price: number;
+  opened_at: string;
+  note: string | null;
+  price: number;
+  pnl: number;
+  pnlPct: number;
+}
+
 const BASE = '';
 
 async function get<T>(url: string): Promise<T> {
@@ -171,7 +206,7 @@ async function get<T>(url: string): Promise<T> {
 }
 
 export const api = {
-  health: () => get<Record<string, unknown>>('/api/health'),
+  health: () => get<HealthInfo>('/api/health'),
   quote: (symbols: string[]) =>
     get<{ quotes: Quote[]; stale: boolean }>(`/api/quote?symbols=${symbols.join(',')}`),
   kline: (symbol: string, period: string, limit: number | 'all' = 400) =>
@@ -209,7 +244,7 @@ export const api = {
     fetch(`/api/watch/folders/${encodeURIComponent(name)}`, { method: 'DELETE' }).then(
       (r) => r.json() as Promise<{ ok?: boolean; error?: string }>,
     ),
-  positions: () => get<{ items: any[] }>('/api/positions'),
+  positions: () => get<{ items: PositionItem[] }>('/api/positions'),
   search: (q: string) =>
     get<{ items: Array<{ symbol: string; code: string; name: string }> }>(
       `/api/search?q=${encodeURIComponent(q)}`,

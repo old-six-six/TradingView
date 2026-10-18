@@ -8,3 +8,5 @@ data/*.db-wal
 data/*.db-shm
 data/*.duckdb*
 .env
+# 调试用的截图/一次性脚本，不进版本库
+.preview/

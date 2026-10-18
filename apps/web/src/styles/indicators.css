@@ -1,0 +1,321 @@
+/* 当日行情摘要：周期行里紧贴「月K」右边，用一条竖分隔线与周期 tab 分开 */
+.period-legend {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  margin-left: -6px;
+  padding-left: 11px;
+  border-left: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+  /* 窗口太窄时能横向滑，但不显示滚动条以免影响观感 */
+  scrollbar-width: none;
+}
+
+.period-legend::-webkit-scrollbar {
+  display: none;
+}
+
+/* 窗口窄到放不下时先从「开高低」开始省，保住日期、收盘、涨跌与量 */
+@media (max-width: 1279px) {
+  .period-legend .lg-ohl {
+    display: none;
+  }
+}
+
+.period-legend .legend-row {
+  flex-wrap: nowrap;
+}
+
+/* ---------- 副图指标折叠面板 ---------- */
+.period-tab-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.period-tab-wrap .caret {
+  font-style: normal;
+  font-size: 9px;
+  margin-left: 3px;
+  color: var(--text-3);
+}
+
+.ind-pop {
+  position: absolute;
+  top: 22px;
+  right: 0;
+  z-index: 40;
+  width: 196px;
+  padding: 9px 10px 7px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+  font-size: 11.5px;
+  color: var(--text-2);
+  cursor: default;
+}
+
+.ind-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.ind-pop-row > i {
+  font-style: normal;
+  color: var(--text-3);
+  width: 52px;
+  flex-shrink: 0;
+}
+
+/**
+ * 原生 select 的 menulist-button 会在右侧多渲染一条自带背景和边框的箭头块，
+ * 跟自己的圆角边框叠在一起很难看。这里关掉原生外观，改成背景自绘小箭头 +
+ * 内边距留位，一个干净的圆角框。
+ */
+.ind-select,
+.side-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 20px 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 5'%3E%3Cpath d='M0.5 0.8l3.5 3.4 3.5-3.4' fill='none' stroke='%236b7280' stroke-width='1.1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 8px 5px;
+  color: var(--text);
+  font-size: 11.5px;
+  font-family: inherit;
+  line-height: 20px;
+  text-align: left;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ind-select::-ms-expand,
+.side-select::-ms-expand {
+  display: none;
+}
+
+.ind-select:hover,
+.side-select:hover {
+  border-color: var(--text-3);
+}
+
+.ind-select:focus,
+.side-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+}
+
+/* 左侧面板标题里的排序下拉：定宽，不跟着标题栏拉满 */
+.side-select {
+  flex: 0 0 58px;
+  width: 58px;
+}
+
+/* 排序下拉左边的「跳到首/尾」两个小按钮 */
+.side-ctl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.side-jump {
+  width: 18px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.side-jump:hover {
+  border-color: var(--text-3);
+  color: var(--text);
+}
+
+.side-jump:active {
+  background: var(--bg-hover);
+}
+
+/* 主图指标面板比副图面板宽一点，容纳「主图指标」四字标签 */
+.ind-pop-main {
+  width: 216px;
+}
+
+/* 主图面板标签容纳「主图指标」四字不折行 */
+.ind-pop-main .ind-pop-row > i {
+  width: 54px;
+}
+
+.ind-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+}
+
+.ind-chips button {
+  min-width: 26px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1;
+  text-align: center;
+}
+
+.ind-chips button:hover:not(:disabled) {
+  border-color: var(--text-3);
+}
+
+.ind-chips button.on {
+  background: var(--text);
+  border-color: var(--text);
+  color: #fff;
+}
+
+.ind-chips button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.ind-link {
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ind-link:hover {
+  text-decoration: underline;
+}
+
+.ind-pop-empty {
+  padding: 2px 0 6px;
+  color: var(--text-3);
+}
+
+.ind-pop-tip {
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+
+.chart-host {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.chart-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+/* ---------- 图表左上角图例（同花顺式，随光标联动） ---------- */
+.chart-legend {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  z-index: 3;
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.84);
+  padding: 2px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.chart-legend .legend-row,
+.period-legend .legend-row {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+}
+
+.chart-legend .legend-time,
+.period-legend .legend-time {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-legend .legend-row i,
+.period-legend .legend-row i {
+  font-style: normal;
+  color: var(--text-3);
+  margin-right: 1px;
+}
+
+.chart-legend .legend-row b,
+.period-legend .legend-row b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-legend .legend-ma {
+  font-size: 10.5px;
+  gap: 8px;
+}
+
+/* 均线只做显示开关，不参与点位操作，故单独放开指针事件 */
+.chart-legend .ma-item {
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.chart-legend .ma-item:hover {
+  text-decoration: underline;
+}
+
+.chart-legend .ma-item.off {
+  color: var(--text-3);
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+
+/* 每个副图图例前的指标名，弱化显示以免抢走数值 */
+.chart-legend .legend-tag {
+  color: var(--text-3);
+  min-width: 30px;
+}
+
+/* 副图图例：贴在各自窗格顶部，top 由窗格实测位置注入 */
+.chart-legend.chart-legend-sub {
+  padding: 1px 7px;
+  background: rgba(255, 255, 255, 0.68);
+}

@@ -1,0 +1,47 @@
+/* ---------- 主体三栏 ---------- */
+.main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 196px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px 7px;
+  font-size: 12px;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.watch-list {
+  flex: 1;
+  overflow: auto;
+}
+
+.watch-item {
+  padding: 6px 12px;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  user-select: none;
+}
+
+.watch-item:hover {
+  background: var(--bg-hover);
+}
+
+/* 左侧板块列表的行是虚拟滚动，高度必须固定内容才对得上 */
+.side-item {
+  padding: 5px 12px;
+  overflow: hidden;
+}

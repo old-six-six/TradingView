@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type HistoryState } from '../api';
+import { api, type HealthInfo, type HistoryState } from '../api';
 import { useStore } from '../store';
 import { backFromMarket } from '../nav';
 
@@ -21,7 +21,7 @@ function shortCount(n: number): string {
 
 export default function StatusBar() {
   const { connected, stale, quotes, lastTs, market, marketStat } = useStore();
-  const [health, setHealth] = useState<Record<string, any> | null>(null);
+  const [health, setHealth] = useState<HealthInfo | null>(null);
   const [hist, setHist] = useState<HistoryState | null>(null);
 
   useEffect(() => {

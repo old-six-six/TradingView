@@ -1,0 +1,272 @@
+/* ---------- 顶栏 ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 40px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.search-box {
+  position: relative;
+  width: 200px;
+}
+
+.search-box input {
+  width: 100%;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  outline: none;
+}
+
+.search-box input:focus {
+  border-color: var(--accent);
+}
+
+.search-drop {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  z-index: 50;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.search-item {
+  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.search-item:hover {
+  background: var(--bg-hover);
+}
+
+/* 最近搜索的分组标题与「清除」 */
+.search-cap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px 4px;
+  font-size: 11px;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.search-clear {
+  cursor: pointer;
+}
+
+.search-clear:hover {
+  color: var(--accent);
+}
+
+/* 图表底部信息条：自选折叠按钮与快捷键提示 */
+.foot-btn {
+  cursor: pointer;
+  padding: 0 4px;
+  margin: 0 -4px;
+  border-radius: 3px;
+  user-select: none;
+}
+
+.foot-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.foot-hint {
+  opacity: 0.72;
+}
+
+/* ---------- 底部「当前位置」右边的「自选板块」下拉 ---------- */
+.pos-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.pos-btn {
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  line-height: inherit;
+}
+
+.pos-btn.on {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.pos-btn .caret {
+  font-style: normal;
+  font-size: 9px;
+  margin-left: 3px;
+  color: var(--text-3);
+}
+
+/* 贴在上方展开（底部没有空间），位置锚在按钮左上角 */
+.pos-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 60;
+  width: 190px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+}
+
+.pos-menu-title {
+  padding: 3px 7px 6px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.pos-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 7px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pos-item:hover {
+  background: var(--bg-hover);
+}
+
+.pos-item.active {
+  background: var(--bg-soft);
+  box-shadow: inset 2px 0 0 var(--up);
+}
+
+.pos-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos-item-count {
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-new {
+  display: flex;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 6px 4px 2px;
+  border-top: 1px solid var(--border);
+}
+
+.pos-new input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 11.5px;
+}
+
+.pos-new input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pos-new button {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: #fff;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.pos-new button:hover:not(:disabled) {
+  border-color: var(--text-3);
+}
+
+.pos-new button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pos-err {
+  padding: 4px 7px 2px;
+  font-size: 11px;
+  color: var(--up);
+}
+
+.index-row {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-2);
+  /* 窗口很窄时宁可裁掉末尾的指数，也别压到右侧的连接状态 */
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* 指数可点：跳到对应市场的全量列表 */
+.idx-item {
+  cursor: pointer;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.idx-item:hover {
+  background: var(--bg-hover);
+}
+
+.idx-item.on {
+  background: var(--bg-hover);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: middle;
+}
