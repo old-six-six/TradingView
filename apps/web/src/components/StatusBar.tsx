@@ -131,7 +131,7 @@ export default function StatusBar() {
             ? `历史 ${hist.done}/${hist.total} · ${hist.etaMs != null ? shortMs(hist.etaMs) : '--'}`
             : missing
               ? `历史 ${covered}/${stocks} ▸ 回填`
-              : `历史 ${covered} 只 · ${shortCount(hist.coverage.bars)} 根`}
+              : `历史 ${shortCount(hist.coverage.bars)} 根`}
         </span>
       )}
       {!market && <span>缓存 {Object.keys(quotes).length} 只</span>}
