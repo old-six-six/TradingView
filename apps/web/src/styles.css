@@ -1518,17 +1518,6 @@ button {
   margin-bottom: 4px;
 }
 
-.kv {
-  display: flex;
-  justify-content: space-between;
-  padding: 3px 0;
-  font-size: 12px;
-}
-
-.kv span:first-child {
-  color: var(--text-3);
-}
-
 .section-title {
   display: flex;
   align-items: baseline;

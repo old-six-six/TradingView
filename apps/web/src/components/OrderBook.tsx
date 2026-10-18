@@ -27,10 +27,9 @@ function useClock() {
 }
 
 export default function OrderBook() {
-  const { quotes, selected, items } = useStore();
+  const { quotes, selected } = useStore();
   const now = useClock();
   const q = quotes[selected];
-  const name = q?.name || items.find((i) => i.symbol === selected)?.name || '--';
 
   if (!q) {
     return (
@@ -90,30 +89,6 @@ export default function OrderBook() {
             <span className="num">{b.volume.toFixed(0)}</span>
           </div>
         ))}
-      </div>
-
-      <div className="section-title">三三卖点档位</div>
-      <div style={{ padding: '8px 12px' }}>
-        {[3, 6, 9].map((p) => {
-          const target = q.open * (1 + p / 100);
-          const hit = q.price >= target;
-          const gap = ((target - q.price) / q.price) * 100;
-          return (
-            <div className="kv" key={p}>
-              <span>+{p}%</span>
-              <span className="num" style={{ color: hit ? 'var(--up)' : 'var(--text-2)' }}>
-                {fmtNum(target)}
-                <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>
-                  {hit ? '已触及' : `差 ${gap.toFixed(1)}%`}
-                </span>
-              </span>
-            </div>
-          );
-        })}
-        <div className="kv" style={{ marginTop: 4 }}>
-          <span>标的</span>
-          <span className="num">{name}</span>
-        </div>
       </div>
     </div>
   );
