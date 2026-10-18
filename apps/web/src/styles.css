@@ -661,6 +661,34 @@ button {
   border-bottom-color: var(--text);
 }
 
+/* 周期行右侧的当日行情摘要：原来占图表顶部一行，移过来省地方 */
+.period-legend {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+  /* 窗口太窄时能横向滑，但不显示滚动条以免影响观感 */
+  scrollbar-width: none;
+}
+
+.period-legend::-webkit-scrollbar {
+  display: none;
+}
+
+/* 窗口窄到放不下时先从「开高低」开始省，保住日期、收盘、涨跌与量 */
+@media (max-width: 1279px) {
+  .period-legend .lg-ohl {
+    display: none;
+  }
+}
+
+.period-legend .legend-row {
+  flex-wrap: nowrap;
+}
+
 /* ---------- 副图指标折叠面板 ---------- */
 .period-tab-wrap {
   position: relative;
@@ -890,24 +918,28 @@ button {
   white-space: nowrap;
 }
 
-.chart-legend .legend-row {
+.chart-legend .legend-row,
+.period-legend .legend-row {
   display: flex;
   gap: 9px;
   align-items: baseline;
 }
 
-.chart-legend .legend-time {
+.chart-legend .legend-time,
+.period-legend .legend-time {
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 
-.chart-legend .legend-row i {
+.chart-legend .legend-row i,
+.period-legend .legend-row i {
   font-style: normal;
   color: var(--text-3);
   margin-right: 1px;
 }
 
-.chart-legend .legend-row b {
+.chart-legend .legend-row b,
+.period-legend .legend-row b {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }

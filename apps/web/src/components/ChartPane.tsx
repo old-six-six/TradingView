@@ -1561,6 +1561,63 @@ export default function ChartPane() {
             {p.label}
           </span>
         ))}
+        {/* 当日行情摘要放在周期行右侧的空白处，省下图表顶部一行 */}
+        <div className="period-legend" title="当日行情摘要（窗口较窄时可横向滚动查看）">
+          {isMinute && minuteLegend && (
+            <div className="legend-row">
+              <span className="legend-time">{minuteLegend.time}</span>
+              <span>
+                <i>价</i>
+                <b className={`num ${cls(minuteLegend.chg)}`}>{fmtNum(minuteLegend.price)}</b>
+              </span>
+              <span>
+                <i>均</i>
+                <b className="num" style={{ color: '#c98a12' }}>
+                  {fmtNum(minuteLegend.avg)}
+                </b>
+              </span>
+              <span className={`num ${cls(minuteLegend.chg)}`}>
+                {minuteLegend.chg > 0 ? '+' : ''}
+                {fmtNum(minuteLegend.chg)} ({minuteLegend.pct > 0 ? '+' : ''}
+                {fmtNum(minuteLegend.pct)}%)
+              </span>
+              <span>
+                <i>量</i>
+                <b className="num">{fmtVolume(minuteLegend.volume)}</b>
+              </span>
+            </div>
+          )}
+          {!isMinute && legend && (
+            <div className="legend-row">
+              <span className="legend-time">{legend.b.date}</span>
+              <span className="lg-ohl">
+                <i>开</i>
+                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.open)}</b>
+              </span>
+              <span className="lg-ohl">
+                <i>高</i>
+                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.high)}</b>
+              </span>
+              <span className="lg-ohl">
+                <i>低</i>
+                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.low)}</b>
+              </span>
+              <span>
+                <i>收</i>
+                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.close)}</b>
+              </span>
+              <span className={`num ${cls(legend.chg)}`}>
+                {legend.chg > 0 ? '+' : ''}
+                {fmtNum(legend.chg)} ({legend.pct > 0 ? '+' : ''}
+                {fmtNum(legend.pct)}%)
+              </span>
+              <span>
+                <i>量</i>
+                <b className="num">{fmtVolume(legend.b.volume)}</b>
+              </span>
+            </div>
+          )}
+        </div>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
           <span
             className="period-tab-wrap"
@@ -1712,65 +1769,9 @@ export default function ChartPane() {
         {!loading && error && <div className="chart-loading">加载失败：{error}</div>}
         {!loading && !error && !bars.length && !minute && <div className="chart-loading">暂无数据</div>}
 
-        {isMinute && minuteLegend && (
+        {!isMinute && legend && (showMa || showBoll || showSup) && (
           <div className="chart-legend">
-            <div className="legend-row">
-              <span className="legend-time">{minuteLegend.time}</span>
-              <span>
-                <i>价</i>
-                <b className={`num ${cls(minuteLegend.chg)}`}>{fmtNum(minuteLegend.price)}</b>
-              </span>
-              <span>
-                <i>均</i>
-                <b className="num" style={{ color: '#c98a12' }}>
-                  {fmtNum(minuteLegend.avg)}
-                </b>
-              </span>
-              <span className={`num ${cls(minuteLegend.chg)}`}>
-                {minuteLegend.chg > 0 ? '+' : ''}
-                {fmtNum(minuteLegend.chg)} ({minuteLegend.pct > 0 ? '+' : ''}
-                {fmtNum(minuteLegend.pct)}%)
-              </span>
-              <span>
-                <i>量</i>
-                <b className="num">{fmtVolume(minuteLegend.volume)}</b>
-              </span>
-            </div>
-          </div>
-        )}
-
-        {!isMinute && legend && (
-          <div className="chart-legend">
-            <div className="legend-row">
-              <span className="legend-time">{legend.b.date}</span>
-              <span>
-                <i>开</i>
-                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.open)}</b>
-              </span>
-              <span>
-                <i>高</i>
-                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.high)}</b>
-              </span>
-              <span>
-                <i>低</i>
-                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.low)}</b>
-              </span>
-              <span>
-                <i>收</i>
-                <b className={`num ${cls(legend.chg)}`}>{fmtNum(legend.b.close)}</b>
-              </span>
-              <span className={`num ${cls(legend.chg)}`}>
-                {legend.chg > 0 ? '+' : ''}
-                {fmtNum(legend.chg)} ({legend.pct > 0 ? '+' : ''}
-                {fmtNum(legend.pct)}%)
-              </span>
-              <span>
-                <i>量</i>
-                <b className="num">{fmtVolume(legend.b.volume)}</b>
-              </span>
-            </div>
-            {(showMa || showBoll || showSup) && (
-              <div className="legend-row legend-ma">
+            <div className="legend-row legend-ma">
                 {showMa &&
                   MA_LABELS.map((label, i) => (
                     <span
@@ -1813,8 +1814,7 @@ export default function ChartPane() {
                     </span>
                   </>
                 )}
-              </div>
-            )}
+            </div>
           </div>
         )}
 
