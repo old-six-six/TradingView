@@ -1908,9 +1908,9 @@ export default function ChartPane() {
         <span
           className="foot-btn"
           onClick={toggleSidebar}
-          title={sidebar ? '收起左侧自选' : '展开左侧自选'}
+          title={sidebar ? '收起左侧面板' : '展开左侧面板'}
         >
-          {sidebar ? '◀ 自选' : '▶ 自选'}
+          {sidebar ? '◀ 左侧' : '▶ 左侧'}
         </span>
         <span className="foot-hint">
           ← → 移动光标　↑ ↓ 缩放　【 】{posLabel ? `${posLabel}内换股` : '换股'}
