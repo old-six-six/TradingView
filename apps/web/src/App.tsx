@@ -18,6 +18,7 @@ export default function App() {
     items,
     selected,
     setItems,
+    setFolders,
     mergeQuotes,
     setConnected,
     select,
@@ -50,11 +51,12 @@ export default function App() {
       .watchlist()
       .then((r) => {
         setItems(r.items);
+        setFolders(r.folders ?? []);
         const first = s || r.items[0]?.symbol;
         if (first) select(first);
       })
       .catch(() => undefined);
-  }, [setItems, select, setMarket]);
+  }, [setItems, setFolders, select, setMarket]);
 
   useEffect(() => {
     let closed = false;

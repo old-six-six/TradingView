@@ -52,6 +52,13 @@ CREATE TABLE IF NOT EXISTS watchlist (
   created_at TEXT
 );
 
+-- 自选文件夹：允许先建空文件夹再往里放票，所以单独一张表
+CREATE TABLE IF NOT EXISTS watch_folder (
+  name TEXT PRIMARY KEY,
+  sort_order INTEGER,
+  created_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS position (
   id TEXT PRIMARY KEY,
   symbol TEXT,
@@ -155,6 +162,16 @@ function migrate(): void {
   if (!stockHave.has('py')) dbc.exec('ALTER TABLE stock ADD COLUMN py TEXT');
   if (!stockHave.has('py2')) dbc.exec('ALTER TABLE stock ADD COLUMN py2 TEXT');
   backfillPinyin();
+
+  // 自选文件夹：「默认」常驻；老库里 watchlist.grp 已有的分组补登记进来
+  // （grp 可能在建表时就写进过数据，不补的话这些票会没有归属的文件夹）
+  dbc.exec(
+    "INSERT OR IGNORE INTO watch_folder (name, sort_order, created_at) VALUES ('默认', 1, datetime('now'))",
+  );
+  dbc.exec(
+    `INSERT OR IGNORE INTO watch_folder (name, sort_order, created_at)
+     SELECT DISTINCT grp, 99, datetime('now') FROM watchlist WHERE grp IS NOT NULL AND grp <> ''`,
+  );
 }
 
 /** 给还没有拼音首字母的老记录补上（只有首次升级或同步前会有活儿） */

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Quote, WatchItem } from './api';
+import { api, type Quote, type WatchFolder, type WatchItem } from './api';
 
 /** 列表页的汇总信息，由 MarketPage 上报、状态栏展示 */
 export interface MarketStat {
@@ -44,6 +44,8 @@ function loadSidebar(): boolean {
 
 interface State {
   items: WatchItem[];
+  /** 自选文件夹清单（含票数），由 /api/watchlist 一起带回来 */
+  folders: WatchFolder[];
   quotes: Record<string, Quote>;
   selected: string;
   period: string;
@@ -69,6 +71,9 @@ interface State {
   connected: boolean;
   lastTs: number;
   setItems: (items: WatchItem[]) => void;
+  setFolders: (folders: WatchFolder[]) => void;
+  /** 重新拉一遍自选与文件夹（增删票、增删文件夹后调用） */
+  reloadWatch: () => Promise<void>;
   mergeQuotes: (quotes: Quote[], stale?: boolean) => void;
   select: (symbol: string, fromBoard?: string | null) => void;
   setPeriod: (p: string) => void;
@@ -82,6 +87,7 @@ interface State {
 
 export const useStore = create<State>((set) => ({
   items: [],
+  folders: [],
   quotes: {},
   selected: '',
   period: 'day',
@@ -107,6 +113,16 @@ export const useStore = create<State>((set) => ({
   lastTs: 0,
   setItems: (items) =>
     set((s) => ({ items, selected: s.selected || items[0]?.symbol || '' })),
+  setFolders: (folders) => set({ folders }),
+  reloadWatch: async () => {
+    const r = await api.watchlist();
+    set((s) => ({
+      items: r.items,
+      folders: r.folders ?? [],
+      // 当前选中票被删掉时退回第一只，避免图表空着
+      selected: s.selected && r.items.some((it) => it.symbol === s.selected) ? s.selected : r.items[0]?.symbol || '',
+    }));
+  },
   mergeQuotes: (quotes, stale) =>
     set((s) => {
       const next = { ...s.quotes };

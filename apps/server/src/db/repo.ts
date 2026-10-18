@@ -129,12 +129,82 @@ export async function listWatchlist(): Promise<WatchItem[]> {
   );
 }
 
-export async function addWatch(symbol: string, name: string, grp = '默认'): Promise<void> {
+/** 没有指定分组的票都归这里，也是唯一不能删的文件夹 */
+export const DEFAULT_FOLDER = '默认';
+const FOLDER_NAME_MAX = 16;
+
+export interface WatchFolder {
+  name: string;
+  count: number;
+}
+
+/** 文件夹名做基本清洗：去首尾空白、连续空格压成一个、限长 */
+export function normalizeFolderName(raw: unknown): string {
+  const name = String(raw ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (!name) throw new Error('文件夹名称不能为空');
+  if ([...name].length > FOLDER_NAME_MAX) throw new Error(`文件夹名称最多 ${FOLDER_NAME_MAX} 个字`);
+  return name;
+}
+
+/** 文件夹清单，顺带带上各自的票数（空文件夹也要返回，否则刚建的会看不见） */
+export async function listFolders(): Promise<WatchFolder[]> {
+  const rows = await query<{ name: string; count: number | bigint }>(
+    `SELECT f.name AS name,
+            (SELECT COUNT(*) FROM watchlist w WHERE w.grp = f.name) AS count
+       FROM watch_folder f
+      ORDER BY f.sort_order ASC, f.name ASC`,
+  );
+  return rows.map((r) => ({ name: String(r.name), count: num(r.count) }));
+}
+
+export async function addFolder(raw: unknown): Promise<string> {
+  const name = normalizeFolderName(raw);
+  const dup = await query<{ c: number | bigint }>(
+    `SELECT COUNT(*) AS c FROM watch_folder WHERE name = ${esc(name)}`,
+  );
+  if (num(dup[0]?.c) > 0) throw new Error('同名文件夹已存在');
+  const rows = await query<{ m: number | bigint }>(
+    'SELECT COALESCE(MAX(sort_order), 1) + 1 AS m FROM watch_folder',
+  );
+  const order = num(rows[0]?.m) || 2;
+  await exec(
+    `INSERT INTO watch_folder (name, sort_order, created_at)
+     VALUES (${esc(name)}, ${order}, ${esc(new Date().toISOString())})`,
+  );
+  return name;
+}
+
+/** 删文件夹只删壳，里面的票退回「默认」，不会跟着消失 */
+export async function removeFolder(raw: unknown): Promise<void> {
+  const name = normalizeFolderName(raw);
+  if (name === DEFAULT_FOLDER) throw new Error(`「${DEFAULT_FOLDER}」文件夹不能删除`);
+  await exec(`UPDATE watchlist SET grp = ${esc(DEFAULT_FOLDER)} WHERE grp = ${esc(name)}`);
+  await exec(`DELETE FROM watch_folder WHERE name = ${esc(name)}`);
+}
+
+/** 文件夹不存在就顺手建出来，免得多一次「先建后放」的交互 */
+async function ensureFolder(name: string): Promise<void> {
+  const rows = await query<{ c: number | bigint }>(
+    `SELECT COUNT(*) AS c FROM watch_folder WHERE name = ${esc(name)}`,
+  );
+  if (num(rows[0]?.c) > 0) return;
+  await addFolder(name);
+}
+
+export async function addWatch(
+  symbol: string,
+  name: string,
+  grp: string = DEFAULT_FOLDER,
+): Promise<void> {
+  const folder = normalizeFolderName(grp);
+  await ensureFolder(folder);
   const rows = await query<{ m: number }>('SELECT COALESCE(MAX(sort_order), 0) + 1 AS m FROM watchlist');
   const order = num(rows[0]?.m) || 1;
   await exec(
     `INSERT OR REPLACE INTO watchlist (symbol, name, grp, sort_order, created_at)
-     VALUES (${esc(symbol)}, ${esc(name)}, ${esc(grp)}, ${order}, ${esc(new Date().toISOString())})`,
+     VALUES (${esc(symbol)}, ${esc(name)}, ${esc(folder)}, ${order}, ${esc(new Date().toISOString())})`,
   );
 }
 

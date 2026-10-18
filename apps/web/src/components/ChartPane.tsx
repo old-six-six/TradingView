@@ -24,6 +24,7 @@ import { BandFillPrimitive } from '../bandFill';
 import { useStore } from '../store';
 import { cls, fmtAmount, fmtNum, fmtPct, fmtVolume } from '../fmt';
 import BoardModal, { type BoardRef } from './BoardModal';
+import WatchAddModal from './WatchAddModal';
 import { MARKET_POS_LABEL } from './MarketPage';
 
 const PERIODS: Array<{ key: string; label: string }> = [
@@ -309,6 +310,8 @@ export default function ChartPane() {
   const [boardTags, setBoardTags] = useState<string[]>([]);
   const [activeBoard, setActiveBoard] = useState<BoardRef | null>(null);
   const [paneTops, setPaneTops] = useState<number[]>([]);
+  /** 「加入自选」弹窗 */
+  const [watchOpen, setWatchOpen] = useState(false);
   const paneRoRef = useRef<ResizeObserver | null>(null);
   const observedElsRef = useRef<Array<HTMLElement | null>>([]);
 
@@ -1761,6 +1764,11 @@ export default function ChartPane() {
               </div>
             )}
           </span>
+          {/* 加入自选：弹窗里选已有文件夹或就地新建 */}
+          <span className="period-tab add-watch" onClick={() => setWatchOpen(true)} title="把这只票加入自选文件夹">
+            ＋自选
+            <i className="caret">▾</i>
+          </span>
         </span>
       </div>
 
@@ -1927,6 +1935,10 @@ export default function ChartPane() {
 
       {activeBoard && (
         <BoardModal board={activeBoard} onClose={() => setActiveBoard(null)} />
+      )}
+
+      {watchOpen && selected && (
+        <WatchAddModal symbol={selected} fallbackName={name} onClose={() => setWatchOpen(false)} />
       )}
     </div>
   );

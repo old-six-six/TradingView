@@ -76,6 +76,12 @@ export interface WatchItem {
   quote?: Quote | null;
 }
 
+/** 自选文件夹（含该文件夹下的票数） */
+export interface WatchFolder {
+  name: string;
+  count: number;
+}
+
 /** 板块类型：行业 / 概念 / 地域 */
 export type BoardKind = 'hy' | 'gn' | 'dy';
 
@@ -167,15 +173,25 @@ export const api = {
     get<{ symbol: string; series: IndicatorSeries | null }>(
       `/api/indicators?symbol=${symbol}&limit=${limit}`,
     ),
-  watchlist: () => get<{ items: WatchItem[] }>('/api/watchlist'),
-  addWatch: (symbol: string, name?: string) =>
+  watchlist: () => get<{ items: WatchItem[]; folders: WatchFolder[] }>('/api/watchlist'),
+  addWatch: (symbol: string, name?: string, grp?: string) =>
     fetch('/api/watchlist', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, name }),
-    }).then((r) => r.json()),
+      body: JSON.stringify({ symbol, name, grp }),
+    }).then((r) => r.json() as Promise<{ ok?: boolean; error?: string; name?: string; grp?: string }>),
   removeWatch: (symbol: string) =>
     fetch(`/api/watchlist/${symbol}`, { method: 'DELETE' }).then((r) => r.json()),
+  addWatchFolder: (name: string) =>
+    fetch('/api/watch/folders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }).then((r) => r.json() as Promise<{ ok?: boolean; error?: string; name?: string }>),
+  removeWatchFolder: (name: string) =>
+    fetch(`/api/watch/folders/${encodeURIComponent(name)}`, { method: 'DELETE' }).then(
+      (r) => r.json() as Promise<{ ok?: boolean; error?: string }>,
+    ),
   positions: () => get<{ items: any[] }>('/api/positions'),
   search: (q: string) =>
     get<{ items: Array<{ symbol: string; code: string; name: string }> }>(
