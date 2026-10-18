@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { api, type Quote } from './api';
 import { useStore, sortBoardRows } from './store';
-import { sectionSymbols, watchSections } from './sideOrder';
+import { sectionSymbols, isWatchEntry, watchEntryFolder, watchFolderRows, watchSections } from './sideOrder';
 import { backToChart } from './nav';
 import TopBar from './components/TopBar';
 import WatchList from './components/WatchList';
 import BoardSide from './components/BoardSide';
 import ChartPane from './components/ChartPane';
 import OrderBook from './components/OrderBook';
-import MarketPage, { MARKET_TABS, MARKET_POS_LABEL } from './components/MarketPage';
+import MarketPage, { MARKET_TABS } from './components/MarketPage';
 import StatusBar from './components/StatusBar';
 
 /** 左侧板块列表的行情刷新间隔，和列表页的快照节奏差不多 */
@@ -17,6 +17,9 @@ const SIDE_POLL_MS = 15_000;
 export default function App() {
   const {
     selected,
+    items,
+    folders,
+    quotes,
     setItems,
     setFolders,
     mergeQuotes,
@@ -43,8 +46,10 @@ export default function App() {
     if (p) useStore.getState().setPeriod(p);
     if (b) setMarket(b);
     if (s) select(s);
-    // 只有五大市场列表点进来的才认这个来源，脏值当没有
-    if (f && MARKET_TABS.some((t) => t.key === f)) useStore.getState().setEntry(f);
+    // 五大市场列表点进来的，或者自己选了自选文件夹（w:xxx），都算「当前位置」
+    if (f && (MARKET_TABS.some((t) => t.key === f) || isWatchEntry(f))) {
+      useStore.getState().setEntry(f);
+    }
     api
       .watchlist()
       .then((r) => {
@@ -129,11 +134,11 @@ export default function App() {
   }, [selected, entry]);
 
   /**
-   * 「当前位置」板块的成员名单。列表页点进来时会带着一份现成的，
-   * 刷新后没有这份缓存就补拉轻量接口；之后定时刷新，涨幅排序才跟得上盘面。
+   * 「当前位置」的成员名单。板块来自轻量接口（列表页点进来时自带一份），
+   * 自选文件夹直接由本地 items + 实时 quotes 派生，不用再请求。
    */
   useEffect(() => {
-    if (!entry) {
+    if (!entry || isWatchEntry(entry)) {
       if (useStore.getState().boardRows) useStore.getState().setBoardRows(null);
       return;
     }
@@ -152,12 +157,26 @@ export default function App() {
     };
   }, [entry, boardRows?.board]);
 
-  /** 左侧板块列表当前的顺序，【 】就按它走 */
+  /** 自选文件夹被删掉时，别把「当前位置」悬在一个不存在的位置上 */
+  useEffect(() => {
+    if (!isWatchEntry(entry)) return;
+    const folder = watchEntryFolder(entry);
+    if (folders.length && !folders.some((f) => f.name === folder)) {
+      useStore.getState().setEntry(null);
+    }
+  }, [entry, folders]);
+
+  /** 左侧列表当前的顺序，【 】就按它走 */
   const boardOrder = useMemo(() => {
-    const rows = boardRows?.board === entry ? boardRows.rows : null;
+    if (!entry) return null;
+    const rows = isWatchEntry(entry)
+      ? watchFolderRows(items, folders, quotes, watchEntryFolder(entry) ?? '')
+      : boardRows?.board === entry
+        ? boardRows.rows
+        : null;
     if (!rows?.length) return null;
     return sortBoardRows(rows, sideSort).map((r) => r.symbol);
-  }, [entry, boardRows, sideSort]);
+  }, [entry, items, folders, quotes, boardRows, sideSort]);
   const boardOrderRef = useRef<string[] | null>(null);
   boardOrderRef.current = boardOrder;
 
@@ -224,12 +243,8 @@ export default function App() {
         ) : (
           <>
             {sidebar &&
-              // 有「当前位置」时左侧列的是那个板块的全部股票，否则还是自选
-              (entry ? (
-                <BoardSide label={MARKET_POS_LABEL[entry] ?? entry} />
-              ) : (
-                <WatchList />
-              ))}
+              // 有「当前位置」（板块或自选文件夹）时左侧列它的成员，否则列全部自选
+              (entry ? <BoardSide /> : <WatchList />)}
             <ChartPane />
             <OrderBook />
           </>

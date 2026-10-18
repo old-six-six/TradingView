@@ -1,20 +1,33 @@
 import { useMemo } from 'react';
 import { useStore } from '../store';
-import type { SideSection } from '../sideOrder';
+import {
+  isWatchEntry,
+  watchEntryFolder,
+  watchFolderRows,
+  type SideSection,
+} from '../sideOrder';
+import { MARKET_POS_LABEL } from './MarketPage';
 import SideList from './SideList';
 
 /**
- * 左侧板块列表：内容是「当前位置」那个板块的全部股票。
- * 排序方式可切（代码 / 涨幅），键盘 【 】 也跟着这个顺序走。
+ * 左侧「当前位置」列表。五大板块和自选文件夹是同一种东西：
+ * 一个位置 → 一串成员，排序、首尾跳转、键盘顺序完全共用。
  */
-export default function BoardSide({ label }: { label: string }) {
-  const { boardRows, entry, selected, select } = useStore();
+export default function BoardSide() {
+  const { boardRows, entry, items, folders, quotes, selected, select } = useStore();
 
-  const rows = boardRows?.board === entry ? boardRows.rows : [];
-  const sections = useMemo<SideSection[]>(
-    () => [{ key: entry ?? 'board', label, rows }],
-    [entry, label, rows],
-  );
+  const folder = watchEntryFolder(entry);
+  const label = folder ?? (entry ? MARKET_POS_LABEL[entry] ?? entry : '板块');
+
+  const sections = useMemo<SideSection[]>(() => {
+    if (folder !== null) {
+      return [{ key: entry ?? folder, label: folder, rows: watchFolderRows(items, folders, quotes, folder) }];
+    }
+    const rows = boardRows?.board === entry ? boardRows.rows : [];
+    return [{ key: entry ?? 'board', label, rows }];
+  }, [folder, entry, label, items, folders, quotes, boardRows]);
+
+  const rows = sections[0].rows;
 
   return (
     <SideList
@@ -23,8 +36,9 @@ export default function BoardSide({ label }: { label: string }) {
       sections={sections}
       selected={selected}
       onPick={(symbol) => select(symbol, entry)}
-      loading={!rows.length}
-      emptyText="这个板块暂时没有成员"
+      // 自选文件夹空着是正常状态，不要显示「正在载入」
+      loading={!isWatchEntry(entry) && !rows.length}
+      emptyText={folder !== null ? '该文件夹里还没有股票' : '这个板块暂时没有成员'}
     />
   );
 }

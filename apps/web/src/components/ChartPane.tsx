@@ -25,6 +25,8 @@ import { useStore } from '../store';
 import { cls, fmtAmount, fmtNum, fmtPct, fmtVolume } from '../fmt';
 import BoardModal, { type BoardRef } from './BoardModal';
 import WatchAddModal from './WatchAddModal';
+import PosMenu from './PosMenu';
+import { watchEntryFolder } from '../sideOrder';
 import { MARKET_POS_LABEL } from './MarketPage';
 
 const PERIODS: Array<{ key: string; label: string }> = [
@@ -312,13 +314,16 @@ export default function ChartPane() {
   const [paneTops, setPaneTops] = useState<number[]>([]);
   /** 「加入自选」弹窗 */
   const [watchOpen, setWatchOpen] = useState(false);
+  /** 底部「自选板块」下拉 */
+  const [posOpen, setPosOpen] = useState(false);
   const paneRoRef = useRef<ResizeObserver | null>(null);
   const observedElsRef = useRef<Array<HTMLElement | null>>([]);
 
   const q = quotes[selected];
   const name = q?.name || items.find((i) => i.symbol === selected)?.name || '';
-  /** 从五大市场列表点进来时显示来源板块，其它入口为 null */
-  const posLabel = entry ? MARKET_POS_LABEL[entry] ?? null : null;
+  /** 「当前位置」：五大板块用板块简称，自选文件夹用文件夹名 */
+  const posFolder = watchEntryFolder(entry);
+  const posLabel = entry ? posFolder ?? MARKET_POS_LABEL[entry] ?? null : null;
 
   /**
    * 支撑压力是纯价格指标（不需要服务端那套指标序列），按当前周期的 K 线现算，
@@ -1924,10 +1929,24 @@ export default function ChartPane() {
           ← → 移动光标　↑ ↓ 缩放　【 】{posLabel ? `${posLabel}内换股` : '换股'}
         </span>
         {posLabel && (
-          <span className="foot-hint" title={`从${posLabel}列表点进来的`}>
+          <span
+            className="foot-hint"
+            title={posFolder ? `当前在自选文件夹「${posLabel}」内` : `从${posLabel}列表点进来的`}
+          >
             当前位置：【{posLabel}】
           </span>
         )}
+        {/* 当前位置右边：切到某个自选文件夹（文件夹和五大板块是同一类「位置」） */}
+        <span className="pos-wrap">
+          <button
+            className={`foot-btn pos-btn${posOpen ? ' on' : ''}`}
+            onClick={() => setPosOpen((v) => !v)}
+            title="选择自选板块（文件夹），左侧按板块方式显示"
+          >
+            自选板块<i className="caret">▾</i>
+          </button>
+          {posOpen && <PosMenu onClose={() => setPosOpen(false)} />}
+        </span>
         <span style={{ marginLeft: 'auto' }}>
           {legend ? (legend.hovered ? `光标 ${legend.b.date}` : `最新 ${lastDate}`) : lastDate}
         </span>
