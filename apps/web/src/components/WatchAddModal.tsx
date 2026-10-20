@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
+import { useRemoveWatch } from '../watchOps';
 
 /**
  * 「加入自选」弹窗：选一个已有文件夹，或就地新建一个。
  * 文件夹列表里也能删（默认文件夹除外），删掉的是壳，里面的票退回默认。
+ * 这只票本来就在自选里时，左下角给一个「从自选移除」。
  */
 export default function WatchAddModal({
   symbol,
@@ -16,6 +18,7 @@ export default function WatchAddModal({
   onClose: () => void;
 }) {
   const { folders, items, quotes, reloadWatch } = useStore();
+  const removeWatch = useRemoveWatch();
   const current = items.find((it) => it.symbol === symbol)?.grp ?? '';
   /** 名称要留给服务端兜底：行情还没到、也没有 fallbackName 时别把代码当名字存进自选 */
   const knownName = quotes[symbol]?.name || items.find((it) => it.symbol === symbol)?.name || fallbackName || '';
@@ -27,6 +30,8 @@ export default function WatchAddModal({
   const [busy, setBusy] = useState(false);
   /** 待确认删除的文件夹名：第一次点 ✕ 变成「确认」，再点才真删 */
   const [pendingDel, setPendingDel] = useState('');
+  /** 待确认移除这只票：同一个两段式确认 */
+  const [pendingRemove, setPendingRemove] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // folders 是异步来的，首帧可能还没有；选中的文件夹被删掉时也退回第一个
@@ -112,6 +117,19 @@ export default function WatchAddModal({
 
   const same = current && current === picked;
 
+  /** 从自选移除：和左侧列表的 ✕ 一样两段式，删完顺手把弹窗关掉 */
+  const doRemove = async () => {
+    if (busy) return;
+    if (!pendingRemove) {
+      setPendingRemove(true);
+      return;
+    }
+    setBusy(true);
+    await removeWatch(symbol);
+    setBusy(false);
+    onClose();
+  };
+
   return (
     <div className="modal-mask" onMouseDown={onClose}>
       <div className="watch-modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -186,6 +204,16 @@ export default function WatchAddModal({
         </div>
 
         <div className="wm-foot">
+          {current ? (
+            <button
+              className={`wm-btn danger${pendingRemove ? ' pending' : ''}`}
+              onClick={() => void doRemove()}
+              disabled={busy}
+              title="把这只票从自选里删掉（不影响其他文件夹）"
+            >
+              {pendingRemove ? '确认移除' : '从自选移除'}
+            </button>
+          ) : null}
           <button className="wm-btn" onClick={onClose}>
             取消
           </button>

@@ -40,6 +40,7 @@ export default function SideList({
   selected,
   onPick,
   actions,
+  onRemove,
   emptyText,
   loading,
   headless,
@@ -50,6 +51,8 @@ export default function SideList({
   onPick: (symbol: string) => void;
   /** 组头右侧的删除按钮，按分组 key 给 */
   actions?: Record<string, SideAction>;
+  /** 每行右侧的「从自选移除」，只有自选列表传（板块成员不能删） */
+  onRemove?: (symbol: string) => void;
   emptyText?: string;
   loading?: boolean;
   headless?: boolean;
@@ -58,6 +61,8 @@ export default function SideList({
   const boxRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewH, setViewH] = useState(560);
+  /** 待确认删除的票：第一次点 ✕ 变「确认」，再点才真删 */
+  const [pendingDel, setPendingDel] = useState('');
   /** 选中的票、排序方式变了就把列表滚过去，避免换完股看不到自己翻到哪 */
   const followRef = useRef('');
 
@@ -226,22 +231,45 @@ export default function SideList({
               );
             }
             const r = it.row;
+            const pending = !!onRemove && pendingDel === r.symbol;
             return (
               <div
                 key={r.symbol}
-                className={`watch-item side-item${selected === r.symbol ? ' active' : ''}`}
+                className={`watch-item side-item${selected === r.symbol ? ' active' : ''}${onRemove ? ' has-del' : ''}`}
                 style={{ top, height: it.h }}
                 title={`${r.name} ${r.code}`}
                 onClick={() => onPick(r.symbol)}
+                onMouseLeave={() => {
+                  if (pending) setPendingDel('');
+                }}
               >
-                <div className="watch-row">
-                  <span className="watch-name">{r.name}</span>
-                  <span className={`num ${cls(r.changePct)}`}>{r.price > 0 ? fmtNum(r.price) : '--'}</span>
+                <div className="side-item-main">
+                  <div className="watch-row">
+                    <span className="watch-name">{r.name}</span>
+                    <span className={`num ${cls(r.changePct)}`}>{r.price > 0 ? fmtNum(r.price) : '--'}</span>
+                  </div>
+                  <div className="watch-sub">
+                    <span className="num">{r.code}</span>
+                    <span className={`num ${cls(r.changePct)}`}>{fmtPct(r.changePct)}</span>
+                  </div>
                 </div>
-                <div className="watch-sub">
-                  <span className="num">{r.code}</span>
-                  <span className={`num ${cls(r.changePct)}`}>{fmtPct(r.changePct)}</span>
-                </div>
+                {onRemove && (
+                  <button
+                    className={`side-del${pending ? ' pending' : ''}`}
+                    title={pending ? '再点一次确认从自选移除' : '从自选移除'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!pending) {
+                        setPendingDel(r.symbol);
+                        return;
+                      }
+                      setPendingDel('');
+                      onRemove(r.symbol);
+                    }}
+                  >
+                    {pending ? '确认' : '✕'}
+                  </button>
+                )}
               </div>
             );
           })}

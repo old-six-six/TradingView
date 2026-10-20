@@ -78,6 +78,55 @@
   margin-top: 1px;
 }
 
+/* ---------- 行内「从自选移除」 ---------- */
+/* 两行内容整体包一层，右侧才好放 ✕；min-width 保证名称还能省略号 */
+.side-item-main {
+  min-width: 0;
+}
+
+/* 有删除按钮的行改成 flex：内容占满，✕ 固定 28px 宽（常驻占位，hover 不跳） */
+.side-item.has-del {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+}
+
+.side-del {
+  flex: none;
+  width: 28px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.side-item:hover .side-del {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.side-del:hover {
+  background: var(--bg-soft);
+  color: var(--up);
+}
+
+/* 待确认状态：常亮变红，第二下才真删 */
+.side-del.pending {
+  opacity: 1;
+  pointer-events: auto;
+  color: var(--up);
+  border-color: var(--up);
+}
+
 /* ---------- 左侧自选的分文件夹 ---------- */
 /* 组头本体在 .side-grp（通用列表里画），这里只剩组名/票数/删除按钮 */
 .watch-grp-name {

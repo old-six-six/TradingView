@@ -257,6 +257,24 @@
   cursor: default;
 }
 
+/* 「从自选移除」：靠左放，红色描边；第二下变实心红才真删 */
+.wm-btn.danger {
+  margin-right: auto;
+  color: var(--up);
+  border-color: rgba(217, 48, 38, 0.45);
+}
+
+.wm-btn.danger:hover:not(:disabled) {
+  border-color: var(--up);
+  background: var(--up-soft);
+}
+
+.wm-btn.danger.pending {
+  background: var(--up);
+  border-color: var(--up);
+  color: #fff;
+}
+
 /* 周期行里的「＋自选」，和主图/指标按钮同一套观感 */
 .period-tab.add-watch {
   color: var(--text-2);

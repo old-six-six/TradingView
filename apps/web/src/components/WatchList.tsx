@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
 import { watchSections } from '../sideOrder';
+import { useRemoveWatch } from '../watchOps';
 import SideList, { type SideAction } from './SideList';
 
 /**
@@ -10,6 +11,7 @@ import SideList, { type SideAction } from './SideList';
  */
 export default function WatchList() {
   const { items, quotes, folders, selected, select, reloadWatch } = useStore();
+  const removeWatch = useRemoveWatch();
   /** 待确认删除的文件夹：第一次点 ✕ 变红等第二下，防止误删 */
   const [confirmDel, setConfirmDel] = useState('');
 
@@ -55,6 +57,7 @@ export default function WatchList() {
       sections={sections}
       selected={selected}
       onPick={(symbol) => select(symbol)}
+      onRemove={(symbol) => void removeWatch(symbol)}
       actions={actions}
       emptyText="暂无自选"
     />
