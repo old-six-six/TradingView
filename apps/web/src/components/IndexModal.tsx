@@ -4,6 +4,7 @@ import {
   AreaSeries,
   CandlestickSeries,
   HistogramSeries,
+  LineSeries,
   LineStyle,
   type IChartApi,
   type ISeriesApi,
@@ -12,7 +13,7 @@ import {
 import { api, type Bar, type MinutePoint, type Quote } from '../api';
 import { gotoMarketFromIndex } from '../nav';
 import { isIntraday, PERIODS } from '../chartPresets';
-import { minutePriceFormat } from '../minuteAxis';
+import { minutePriceFormat, SESSION_TIMES } from '../minuteAxis';
 import MinuteAxis, { MINUTE_AXIS_HEIGHT } from './MinuteAxis';
 import type { IndexRef } from '../store';
 import { cls, fmtNum, fmtPct } from '../fmt';
@@ -62,6 +63,9 @@ function tsOf(dateStr: string): number {
   return Date.UTC(y, mo - 1, d, hh, mi) / 1000;
 }
 
+/** 分时的视野：整日 242 个槽，从头铺到尾 */
+const FULL_DAY_RANGE = { from: -0.5, to: SESSION_TIMES.length - 0.5 };
+
 /**
  * 顶栏五大板块指数弹窗：默认看分时，可切 5/15/30/60 分和日/周/月 K。
  * 用的是主图同一套 K 线接口（指数代码如 sh000001 直接支持），
@@ -82,6 +86,8 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
   const seriesRef = useRef<ISeriesApi<any>[]>([]);
   /** 分时自绘时间轴占用的底部高度 */
   const minutePadRef = useRef(0);
+  /** 当前是否分时：改尺寸后要把视野重新钉回整日 */
+  const minuteViewRef = useRef(false);
 
   // Esc 关闭。忽略「本组件刚挂载前」就发生的那一下 Esc：
   // 从列表页 Esc 退回弹窗时，是同一个键盘事件把弹窗重新打开的，不能被它顺手再关掉
@@ -185,6 +191,8 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
           width: hostRef.current.clientWidth,
           height: hostRef.current.clientHeight - minutePadRef.current,
         });
+        // 改尺寸会把视野打回「最后 N 根」，分时得重新钉回整日
+        if (minuteViewRef.current) chart.timeScale().setVisibleLogicalRange(FULL_DAY_RANGE);
       }
     });
     ro.observe(hostRef.current);
@@ -214,10 +222,16 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
       timeScale: {
         timeVisible: isIntraday(period),
         visible: period !== 'minute',
+        // 分时整日铺满，右侧不留空白柱
+        rightOffset: period === 'minute' ? 0 : 3,
         tickMarkFormatter: indexTickFormatter,
       },
+      // 分时的横轴固定为整日，禁掉拖动与缩放
+      handleScroll: period !== 'minute',
+      handleScale: period !== 'minute',
     });
     minutePadRef.current = period === 'minute' ? MINUTE_AXIS_HEIGHT : 0;
+    minuteViewRef.current = period === 'minute';
     if (hostRef.current) {
       chart.applyOptions({
         width: hostRef.current.clientWidth,
@@ -231,6 +245,10 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
       const up = prevClose > 0 ? last >= prevClose : true;
       const color = up ? UP : DOWN;
 
+      // 横轴按整个交易日铺满，未走到的槽留白，见 minuteAxis.SESSION_TIMES
+      const byTime = new Map(points.map((p) => [p.time, p]));
+      const at = (t: string) => tsOf(`${date} ${t}`) as UTCTimestamp;
+
       const area = chart.addSeries(AreaSeries, {
         lineColor: color,
         topColor: up ? 'rgba(217,48,38,0.16)' : 'rgba(18,137,79,0.16)',
@@ -240,7 +258,12 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
         priceLineVisible: false,
         lastValueVisible: true,
       });
-      area.setData(points.map((p) => ({ time: tsOf(`${date} ${p.time}`) as UTCTimestamp, value: p.price })));
+      area.setData(
+        SESSION_TIMES.map((t) => {
+          const p = byTime.get(t);
+          return p ? { time: at(t), value: p.price } : { time: at(t) };
+        }),
+      );
       seriesRef.current.push(area);
 
       if (prevClose > 0) {
@@ -260,13 +283,34 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
         1,
       );
       vol.setData(
-        points.map((p) => ({
-          time: tsOf(`${date} ${p.time}`) as UTCTimestamp,
-          value: p.volume,
-          color: p.price >= (prevClose || p.price) ? UP_SOFT : DOWN_SOFT,
-        })),
+        SESSION_TIMES.map((t) => {
+          const p = byTime.get(t);
+          if (!p) return { time: at(t) };
+          return {
+            time: at(t),
+            value: p.volume,
+            color: p.price >= (prevClose || p.price) ? UP_SOFT : DOWN_SOFT,
+          };
+        }),
       );
       seriesRef.current.push(vol);
+
+      // 收尾的 whitespace 会被库裁掉，时间轴范围就只到当前时刻，整日视野会被钳回来。
+      // 补一条不可见的占位线把范围撑到 15:00（只占坐标，不参与缩放、不出像素）
+      const stub = chart.addSeries(
+        LineSeries,
+        {
+          color: 'transparent',
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+          autoscaleInfoProvider: () => null,
+        },
+        0,
+      );
+      stub.setData(SESSION_TIMES.map((t) => ({ time: at(t), value: prevClose || last })));
+      seriesRef.current.push(stub);
 
       chart.panes().forEach((p, i) => {
         try {
@@ -275,7 +319,8 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
           /* 版本不支持就用默认分配 */
         }
       });
-      chart.timeScale().fitContent();
+      // 分时横轴固定为整日坐标，行情只画到当下，后面的槽位留白
+      chart.timeScale().setVisibleLogicalRange(FULL_DAY_RANGE);
       return;
     }
 
@@ -381,7 +426,7 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
             <div className="bm-chart-loading">暂无数据</div>
           )}
           {period === 'minute' && points.length > 0 && (
-            <MinuteAxis chart={chartRef.current} times={points.map((p) => p.time)} />
+            <MinuteAxis chart={chartRef.current} times={SESSION_TIMES} />
           )}
         </div>
       </div>

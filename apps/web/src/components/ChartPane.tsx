@@ -29,7 +29,7 @@ import PosMenu from './PosMenu';
 import BoardMenu from './BoardMenu';
 import { watchEntryFolder } from '../sideOrder';
 import { BARS_ON_SCREEN, PERIODS } from '../chartPresets';
-import { minutePriceFormat } from '../minuteAxis';
+import { minutePriceFormat, SESSION_TIMES } from '../minuteAxis';
 import MinuteAxis, { MINUTE_AXIS_HEIGHT } from './MinuteAxis';
 import { MARKET_POS_LABEL } from './MarketPage';
 
@@ -208,6 +208,9 @@ function minuteTs(date: string, hhmm: string): number {
   return Date.UTC(y, mo - 1, d, hh, mm) / 1000;
 }
 
+/** 分时的视野：整日 242 个槽，从头铺到尾，右侧不留「未来」 */
+const FULL_DAY_RANGE = { from: -0.5, to: SESSION_TIMES.length - 0.5 };
+
 /** 时间轴刻度：按跨度自动分层，分钟级别显示 HH:MM，跨日显示 MM/DD */
 function makeTickFormatter() {
   return (time: any, tickMarkType?: number): string => {
@@ -233,6 +236,8 @@ export default function ChartPane() {
   const seriesRef = useRef<ISeriesApi<any>[]>([]);
   /** 分时自绘时间轴占用的底部高度，0 表示当前周期不用留 */
   const minutePadRef = useRef(0);
+  /** 当前是否分时：尺寸变化后要把视野重新钉回整日（见下面的 ResizeObserver） */
+  const minuteViewRef = useRef(false);
   /** 主图 K 线序列，键盘左右键定位光标时要知道价格轴挂在谁身上 */
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   /** 光标当前所在的 K 线索引，null = 还没定位过 */
@@ -560,6 +565,8 @@ export default function ChartPane() {
         });
         layoutPanes();
         requestAnimationFrame(measurePaneTops);
+        // 改尺寸会把视野打回「最后 N 根」，分时得重新钉回整日
+        if (minuteViewRef.current) chart.timeScale().setVisibleLogicalRange(FULL_DAY_RANGE);
         // 宽度变了十字线会按像素重新吸附到别的 K 线上，重新钉回原来那根
         if (keep !== null) {
           requestAnimationFrame(() => {
@@ -642,6 +649,8 @@ export default function ChartPane() {
   function zoomBy(factor: number) {
     const chart = chartRef.current;
     if (!chart) return;
+    // 分时横轴固定整日（见 MinuteAxis），缩放就没有「整个交易日」这回事了
+    if (minuteViewRef.current) return;
     const ts = chart.timeScale();
     const bars = barsRef.current;
     if (!bars.length) return;
@@ -901,12 +910,18 @@ export default function ChartPane() {
         secondsVisible: false,
         // 分时的时间轴自绘（见 MinuteAxis）：库在午休断点会丢刻度
         visible: period !== 'minute',
+        // 分时要整日铺满，右侧不留空白柱；K 线仍留几根呼吸空间
+        rightOffset: period === 'minute' ? 0 : 4,
       },
+      // 分时横轴是整个交易日，拖一下/缩一下就不是了，索性禁掉
+      handleScroll: period !== 'minute',
+      handleScale: period !== 'minute',
       rightPriceScale: { scaleMargins: { top: 0.06, bottom: 0.06 } },
     });
 
     // 分时要给自绘时间轴留出底部空间，图表本体相应减高
     minutePadRef.current = period === 'minute' ? MINUTE_AXIS_HEIGHT : 0;
+    minuteViewRef.current = period === 'minute';
     if (hostRef.current) {
       chart.applyOptions({
         width: hostRef.current.clientWidth,
@@ -924,7 +939,8 @@ export default function ChartPane() {
       layoutPanes();
       requestAnimationFrame(measurePaneTops);
       if (period === 'minute') {
-        chart.timeScale().fitContent();
+        // 分时横轴固定为整日坐标，行情只画到当下，后面的槽位留白
+        chart.timeScale().setVisibleLogicalRange(FULL_DAY_RANGE);
       } else {
         const total = bars.length;
         // 同一只票同一周期重绘（切均线/副图）时保留原视野，否则回到最新一屏
@@ -1041,18 +1057,25 @@ export default function ChartPane() {
     chart: IChartApi,
     data: { date: string; prevClose: number; points: MinutePoint[] },
   ) {
-    const priceData = data.points.map((p) => ({
-      time: minuteTs(data.date, p.time) as UTCTimestamp,
-      value: p.price,
-    }));
+    // 横轴按整个交易日铺满：有数据的槽填值，还没走到的槽留白（whitespace），
+    // 这样早盘十点也不会把 9:30→10:30 拉成满屏
+    const byTime = new Map(data.points.map((p) => [p.time, p]));
+    const at = (t: string) => minuteTs(data.date, t) as UTCTimestamp;
+
+    const priceData = SESSION_TIMES.map((t) => {
+      const p = byTime.get(t);
+      return p ? { time: at(t), value: p.price } : { time: at(t) };
+    });
 
     let cumVol = 0;
     let cumAmt = 0;
-    const avgData = data.points.map((p) => {
+    const avgData = SESSION_TIMES.map((t) => {
+      const p = byTime.get(t);
+      if (!p) return { time: at(t) };
       cumVol += p.volume;
       cumAmt += p.amount;
       return {
-        time: minuteTs(data.date, p.time) as UTCTimestamp,
+        time: at(t),
         value: cumVol > 0 ? cumAmt / (cumVol * 100) : p.price,
       };
     });
@@ -1112,17 +1135,44 @@ export default function ChartPane() {
     avg.setData(avgData);
     seriesRef.current.push(avg);
 
+    // 收尾的 whitespace 会被库裁掉（它没有值，画不出东西），时间轴的数据范围
+    // 就只到当前时刻，整日视野会被钳回来。补一条不可见的占位线把范围撑到 15:00：
+    // 只占坐标，不参与自动缩放，也不显示任何像素
+    const stub = chart.addSeries(
+      LineSeries,
+      {
+        color: 'transparent',
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => null,
+      },
+      0,
+    );
+    stub.setData(
+      SESSION_TIMES.map((t) => ({
+        time: at(t),
+        value: data.prevClose || data.points[0]?.price || 0,
+      })),
+    );
+    seriesRef.current.push(stub);
+
     const vol = chart.addSeries(
       HistogramSeries,
       { priceFormat: VOLUME_FORMAT, priceLineVisible: false, lastValueVisible: false },
       1,
     );
     vol.setData(
-      data.points.map((p) => ({
-        time: minuteTs(data.date, p.time) as UTCTimestamp,
-        value: p.volume,
-        color: p.price >= (data.prevClose || p.price) ? UP_SOFT : DOWN_SOFT,
-      })),
+      SESSION_TIMES.map((t) => {
+        const p = byTime.get(t);
+        if (!p) return { time: at(t) };
+        return {
+          time: at(t),
+          value: p.volume,
+          color: p.price >= (data.prevClose || p.price) ? UP_SOFT : DOWN_SOFT,
+        };
+      }),
     );
     seriesRef.current.push(vol);
 
@@ -1777,9 +1827,7 @@ export default function ChartPane() {
       </div>
 
       <div className="chart-host" ref={hostRef}>
-        {isMinute && (
-          <MinuteAxis chart={chartRef.current} times={minute?.points.map((p) => p.time) ?? []} />
-        )}
+        {isMinute && <MinuteAxis chart={chartRef.current} times={SESSION_TIMES} />}
         {loading && <div className="chart-loading">加载中…</div>}
         {!loading && error && <div className="chart-loading">加载失败：{error}</div>}
         {!loading && !error && !bars.length && !minute && <div className="chart-loading">暂无数据</div>}

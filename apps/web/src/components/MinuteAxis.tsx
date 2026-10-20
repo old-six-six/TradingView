@@ -4,6 +4,10 @@ import type { IChartApi } from 'lightweight-charts';
 /**
  * 分时图底部时间轴，自绘。
  *
+ * 横轴的口径是「整个交易日」：9:30–15:00 固定 242 个分钟槽（见 minuteAxis.ts），
+ * 行情只画到当下，后面的槽位留白。不能跟着「已经走了几分钟」拉伸——否则早盘
+ * 十点那几十个点会被铺满整屏，9:30→10:30 看起来像过了大半天。
+ *
  * 为什么不用 lightweight-charts 自带的刻度：11:30 与 13:00 在图上只隔一根
  * （午休被压缩），库的重叠检测会把这两个刻度一起丢掉，导致下午的 14:00 前面
  * 只剩 11:00 —— 和同花顺对不上。这里把分时的时间轴整个关掉（timeScale.visible
@@ -40,8 +44,8 @@ export default function MinuteAxis({
   times,
 }: {
   chart: IChartApi | null;
-  /** 分时数据的时间序列（"09:30" 这种），用于定位刻度 */
-  times: string[];
+  /** 整日的时间槽（SESSION_TIMES），用于定位刻度 */
+  times: readonly string[];
 }) {
   const [marks, setMarks] = useState<Mark[]>([]);
   // 数组每次渲染都是新引用，依赖它会把 effect 打成死循环，故用拼接后的 key
@@ -82,17 +86,27 @@ export default function MinuteAxis({
     // fitContent / 缩放 / 容器变化都会改可见范围，所以跟着范围变化重排，
     // 只在第一次渲染时量一次会拿到 fitContent 之前的旧坐标
     let raf = 0;
+    let tries = 0;
     const schedule = () => {
       if (raf) return;
-      raf = requestAnimationFrame(() => {
+      const tick = () => {
         raf = 0;
-        place();
-      });
+        // 布局还没落地（width 为 0）就再等一帧，连续十帧还不行就先放着
+        if (place() || ++tries > 10) {
+          tries = 0;
+          return;
+        }
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
     };
 
     const ts = chart.timeScale();
     ts.subscribeVisibleLogicalRangeChange(schedule);
     window.addEventListener('resize', schedule);
+    // 侧栏收起、窗口缩放时图表宽度会变，但不会触发 range change，得单独跟一下
+    const ro = new ResizeObserver(() => schedule());
+    ro.observe(chart.chartElement());
 
     // 弹窗里子组件的 effect 先于父组件「把数据塞进图表」的那个，
     // 首次量出来会是空；没量到就补几次，量到为止
@@ -108,6 +122,7 @@ export default function MinuteAxis({
       for (const t of timers) window.clearTimeout(t);
       ts.unsubscribeVisibleLogicalRangeChange(schedule);
       window.removeEventListener('resize', schedule);
+      ro.disconnect();
     };
   }, [chart, key]);
 
