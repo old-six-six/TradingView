@@ -39,6 +39,21 @@
   margin-bottom: 4px;
 }
 
+/* 最新价右侧：上面涨跌，下面昨收——五档的红绿就是拿这个昨收比的 */
+.book-chg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.book-prev {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
 .section-title {
   display: flex;
   align-items: baseline;

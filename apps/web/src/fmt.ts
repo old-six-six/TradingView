@@ -21,7 +21,9 @@ export function fmtVolume(hands: number | null | undefined): string {
   return `${hands.toFixed(0)} 手`;
 }
 
-export function cls(v: number | null | undefined): string {
+export type Move = 'up' | 'down' | 'flat';
+
+export function cls(v: number | null | undefined): Move {
   if (v === null || v === undefined || !Number.isFinite(v) || v === 0) return 'flat';
   return v > 0 ? 'up' : 'down';
 }
