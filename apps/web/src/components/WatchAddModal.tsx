@@ -17,7 +17,9 @@ export default function WatchAddModal({
 }) {
   const { folders, items, quotes, reloadWatch } = useStore();
   const current = items.find((it) => it.symbol === symbol)?.grp ?? '';
-  const name = quotes[symbol]?.name || items.find((it) => it.symbol === symbol)?.name || fallbackName || symbol;
+  /** 名称要留给服务端兜底：行情还没到、也没有 fallbackName 时别把代码当名字存进自选 */
+  const knownName = quotes[symbol]?.name || items.find((it) => it.symbol === symbol)?.name || fallbackName || '';
+  const name = knownName || symbol;
 
   const [picked, setPicked] = useState(() => current || folders[0]?.name || '默认');
   const [newName, setNewName] = useState('');
@@ -93,9 +95,12 @@ export default function WatchAddModal({
     if (!picked || busy) return;
     setBusy(true);
     setErr('');
-    const r: { error?: string } = await api.addWatch(symbol, name, picked).catch((e) => ({
-      error: String(e),
-    }));
+    // 不知道名字就不传，让服务端从股票库补，免得自选里显示成代码
+    const r: { error?: string } = await api.addWatch(symbol, knownName || undefined, picked).catch(
+      (e) => ({
+        error: String(e),
+      }),
+    );
     setBusy(false);
     if (r.error) {
       setErr(r.error);

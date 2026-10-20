@@ -312,6 +312,8 @@ export default function ChartPane() {
 
   const q = quotes[selected];
   const name = q?.name || items.find((i) => i.symbol === selected)?.name || '';
+  /** 这只票在不在自选里（搜出来的票只有点了「＋自选」才进来） */
+  const watchRow = items.find((i) => i.symbol === selected);
   /** 「当前位置」：五大板块用板块简称，自选文件夹用文件夹名 */
   const posFolder = watchEntryFolder(entry);
   const posLabel = entry ? posFolder ?? MARKET_POS_LABEL[entry] ?? null : null;
@@ -1818,9 +1820,17 @@ export default function ChartPane() {
               </div>
             )}
           </span>
-          {/* 加入自选：弹窗里选已有文件夹或就地新建 */}
-          <span className="period-tab add-watch" onClick={() => setWatchOpen(true)} title="把这只票加入自选文件夹">
-            ＋自选
+          {/* 加入自选：没在自选里是「＋自选」，已经在里面就显示所在文件夹，点开仍可换 */}
+          <span
+            className={`period-tab add-watch${watchRow ? ' on' : ''}`}
+            onClick={() => setWatchOpen(true)}
+            title={
+              watchRow
+                ? `已在自选「${watchRow.grp || '默认'}」里，点击可换文件夹`
+                : '把这只票加入自选文件夹（搜索看过的票不会自动加进来）'
+            }
+          >
+            {watchRow ? `✓ ${watchRow.grp || '默认'}` : '＋自选'}
             <i className="caret">▾</i>
           </span>
         </span>

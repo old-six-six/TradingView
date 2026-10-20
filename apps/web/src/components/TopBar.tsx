@@ -52,8 +52,6 @@ export default function TopBar() {
   const {
     connected,
     stale,
-    items,
-    setItems,
     select,
     market,
     indexModal,
@@ -150,13 +148,13 @@ export default function TopBar() {
     });
   };
 
-  const pick = async (it: { symbol: string; code: string; name: string }) => {
+  /**
+   * 点搜索结果（或最近搜索）只是把图切过去看，不往自选里塞。
+   * 收进自选得自己按图表右上角的「＋自选」，那里能挑文件夹；
+   * 以前这里会顺手加到「默认」，结果搜过一遍就多出一堆没打算跟踪的票。
+   */
+  const pick = (it: { symbol: string; code: string; name: string }) => {
     remember(it);
-    if (!items.some((i) => i.symbol === it.symbol)) {
-      await api.addWatch(it.symbol, it.name).catch(() => undefined);
-      const r = await api.watchlist().catch(() => null);
-      if (r) setItems(r.items);
-    }
     select(it.symbol);
     setKw('');
     setOpen(false);
@@ -186,7 +184,7 @@ export default function TopBar() {
           onBlur={() => window.setTimeout(() => setOpen(false), 160)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && results[0]) {
-              void pick(results[0]);
+              pick(results[0]);
             } else if (e.key === 'Escape') {
               setKw('');
               setOpen(false);
@@ -197,7 +195,7 @@ export default function TopBar() {
         {showDrop && typing && (
           <div className="search-drop">
             {results.map((r) => (
-              <div key={r.symbol} className="search-item" onMouseDown={() => void pick(r)}>
+              <div key={r.symbol} className="search-item" onMouseDown={() => pick(r)}>
                 <span>{r.name}</span>
                 <span className="num" style={{ color: 'var(--text-3)' }}>
                   {r.code}
@@ -221,7 +219,7 @@ export default function TopBar() {
               </span>
             </div>
             {recent.map((r) => (
-              <div key={r.symbol} className="search-item" onMouseDown={() => void pick(r)}>
+              <div key={r.symbol} className="search-item" onMouseDown={() => pick(r)}>
                 <span>{r.name}</span>
                 <span className="num" style={{ color: 'var(--text-3)' }}>
                   {r.code}

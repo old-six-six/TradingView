@@ -135,12 +135,17 @@ export const useStore = create<State>((set) => ({
   setFolders: (folders) => set({ folders }),
   reloadWatch: async () => {
     const r = await api.watchlist();
-    set((s) => ({
-      items: r.items,
-      folders: r.folders ?? [],
-      // 当前选中票被删掉时退回第一只，避免图表空着
-      selected: s.selected && r.items.some((it) => it.symbol === s.selected) ? s.selected : r.items[0]?.symbol || '',
-    }));
+    set((s) => {
+      const wasInList = s.items.some((it) => it.symbol === s.selected);
+      const stillIn = r.items.some((it) => it.symbol === s.selected);
+      // 只有「本来在自选里、这次被删掉了」才退回第一只。
+      // 搜索结果看的票根本不在自选里，刷一次列表不该把图跳走。
+      return {
+        items: r.items,
+        folders: r.folders ?? [],
+        selected: s.selected && (!wasInList || stillIn) ? s.selected : r.items[0]?.symbol || '',
+      };
+    });
   },
   mergeQuotes: (quotes, stale) =>
     set((s) => {

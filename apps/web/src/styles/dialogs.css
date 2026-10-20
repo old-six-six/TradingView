@@ -261,3 +261,8 @@
 .period-tab.add-watch {
   color: var(--text-2);
 }
+
+/* 已经在自选里：显示所在文件夹，用蓝色和「＋自选」区分开 */
+.period-tab.add-watch.on {
+  color: var(--accent);
+}
