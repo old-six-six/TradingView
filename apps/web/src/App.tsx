@@ -246,8 +246,12 @@ export default function App() {
       if (next) st.select(next, board);
       return;
     }
-    // 自选：和左侧列表完全同一套顺序（文件夹顺序 + 组内当前排序），出界就停住
-    const order = sectionSymbols(watchSections(st.items, st.folders, st.quotes), st.sideSort);
+    // 自选：和左侧列表完全同一套顺序（文件夹顺序 + 组内当前排序），出界就停住；
+    // 折叠起来的文件夹在左栏看不到，翻票也跳过，免得【】翻进看不见的票
+    const order = sectionSymbols(
+      watchSections(st.items, st.folders, st.quotes).filter((s) => !st.collapsed.includes(s.key)),
+      st.sideSort,
+    );
     if (!order.length) return;
     const idx = order.indexOf(st.selected);
     const cur = idx >= 0 ? idx : dir > 0 ? -1 : order.length;

@@ -50,6 +50,18 @@ function loadSidebar(): boolean {
   }
 }
 
+/** 折叠起来的自选文件夹名，刷新后保持；左栏一屏放得下的票更多 */
+const COLLAPSED_KEY = 'tv.collapsedFolders';
+function loadCollapsed(): string[] {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 interface State {
   items: WatchItem[];
   /** 自选文件夹清单（含票数），由 /api/watchlist 一起带回来 */
@@ -96,6 +108,9 @@ interface State {
   setEntry: (b: string | null) => void;
   setBoardRows: (m: { board: string; rows: BoardLiteRow[]; at: number } | null) => void;
   setSideSort: (s: SideSort) => void;
+  /** 左侧自选里被折叠的文件夹名（只影响「全部自选」这一层） */
+  collapsed: string[];
+  toggleCollapse: (folder: string) => void;
   setIndexModal: (r: IndexRef | null) => void;
   setIndexReturn: (r: IndexRef | null) => void;
   setMarketStat: (s: MarketStat | null) => void;
@@ -116,6 +131,19 @@ export const useStore = create<State>((set) => ({
   sideSort: 'code',
   indexModal: null,
   indexReturn: null,
+  collapsed: loadCollapsed(),
+  toggleCollapse: (folder) =>
+    set((s) => {
+      const next = s.collapsed.includes(folder)
+        ? s.collapsed.filter((n) => n !== folder)
+        : [...s.collapsed, folder];
+      try {
+        localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next));
+      } catch {
+        /* 忽略隐私模式下的写入失败 */
+      }
+      return { collapsed: next };
+    }),
   sidebar: loadSidebar(),
   toggleSidebar: () =>
     set((s) => {

@@ -28,6 +28,26 @@
   opacity: 1;
 }
 
+/* 能折叠的文件夹组头：整行可点，给个手型和悬停底色 */
+.side-grp.foldable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.side-grp.foldable:hover {
+  background: var(--bg-hover);
+}
+
+/* 折叠箭头：宽度固定，展开/收起时组名不会左右跳 */
+.grp-caret {
+  width: 9px;
+  flex: none;
+  text-align: center;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-3);
+}
+
 .side-empty {
   display: flex;
   align-items: center;
@@ -79,22 +99,19 @@
 }
 
 /* ---------- 行内「从自选移除」 ---------- */
-/* 两行内容整体包一层，右侧才好放 ✕；min-width 保证名称还能省略号 */
+/* 两行内容整体包一层，✕ 以它为定位基准（行本身是 absolute，不能动它的 position） */
 .side-item-main {
+  position: relative;
   min-width: 0;
 }
 
-/* 有删除按钮的行改成 flex：内容占满，✕ 固定 28px 宽（常驻占位，hover 不跳） */
-.side-item.has-del {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding-right: 4px;
-}
-
+/* ✕ 绝对定位贴在内容层右缘，不占位——不悬停时价格/涨幅照旧贴边，没有多余留白 */
 .side-del {
-  flex: none;
-  width: 28px;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
   height: 20px;
   padding: 0;
   border: 1px solid transparent;
@@ -117,6 +134,13 @@
 .side-del:hover {
   background: var(--bg-soft);
   color: var(--up);
+}
+
+/* 悬停时把右侧的数值让出来给 ✕：只淡出、不挪位置，别的行也不受影响 */
+.side-item:hover .watch-row > .num,
+.side-item:hover .watch-sub > .num:last-child {
+  opacity: 0;
+  transition: opacity 0.1s;
 }
 
 /* 待确认状态：常亮变红，第二下才真删 */

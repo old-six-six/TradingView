@@ -41,6 +41,7 @@ export default function SideList({
   onPick,
   actions,
   onRemove,
+  onToggleCollapse,
   emptyText,
   loading,
   headless,
@@ -53,16 +54,19 @@ export default function SideList({
   actions?: Record<string, SideAction>;
   /** 每行右侧的「从自选移除」，只有自选列表传（板块成员不能删） */
   onRemove?: (symbol: string) => void;
+  /** 给了就可以点组头折叠/展开该分组（全部自选那一层用；单组列表不传） */
+  onToggleCollapse?: (key: string) => void;
   emptyText?: string;
   loading?: boolean;
   headless?: boolean;
 }) {
-  const { sideSort, setSideSort } = useStore();
+  const { sideSort, setSideSort, collapsed } = useStore();
   const boxRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewH, setViewH] = useState(560);
   /** 待确认删除的票：第一次点 ✕ 变「确认」，再点才真删 */
   const [pendingDel, setPendingDel] = useState('');
+  const folded = useMemo(() => new Set(collapsed), [collapsed]);
   /** 选中的票、排序方式变了就把列表滚过去，避免换完股看不到自己翻到哪 */
   const followRef = useRef('');
 
@@ -70,6 +74,9 @@ export default function SideList({
     const out: Item[] = [];
     for (const s of sections) {
       if (!headless) out.push({ kind: 'head', section: s, h: SIDE_HEAD_H });
+      // 折叠起来的分组只留组头，成员一个都不铺
+      const shut = !!onToggleCollapse && folded.has(s.key);
+      if (shut) continue;
       const rows = sortBoardRows(s.rows, sideSort);
       if (!rows.length && s.emptyText) {
         out.push({ kind: 'empty', key: s.key, text: s.emptyText, h: SIDE_EMPTY_H });
@@ -77,7 +84,7 @@ export default function SideList({
       for (const row of rows) out.push({ kind: 'row', row, h: SIDE_ROW_H });
     }
     return out;
-  }, [sections, sideSort, headless]);
+  }, [sections, sideSort, headless, onToggleCollapse, folded]);
 
   /** 每一项的纵向起点，虚拟滚动和跟随都靠它 */
   const tops = useMemo(() => {
@@ -202,19 +209,28 @@ export default function SideList({
             const top = tops[start + i];
             if (it.kind === 'head') {
               const act = actions?.[it.section.key];
+              const foldable = !!onToggleCollapse;
+              const shut = foldable && folded.has(it.section.key);
               return (
                 <div
                   key={`h:${it.section.key}`}
-                  className="side-grp"
+                  className={`side-grp${foldable ? ' foldable' : ''}`}
                   style={{ top, height: it.h }}
                   onMouseLeave={() => act?.onLeave?.()}
+                  onClick={foldable ? () => onToggleCollapse(it.section.key) : undefined}
+                  title={foldable ? (shut ? `展开「${it.section.label}」` : `收起「${it.section.label}」`) : undefined}
                 >
+                  {foldable && <span className="grp-caret">{shut ? '▸' : '▾'}</span>}
                   <span className="watch-grp-name">{it.section.label}</span>
                   <span className="watch-grp-count">{it.section.rows.length}</span>
                   {act && (
                     <button
                       className={`watch-grp-del${act.pending ? ' pending' : ''}`}
-                      onClick={act.onClick}
+                      onClick={(e) => {
+                        // 组头本身是折叠开关，删文件夹别顺带把分组折了
+                        e.stopPropagation();
+                        act.onClick();
+                      }}
                       title={act.title}
                     >
                       {act.pending ? act.pendingLabel : act.label}
@@ -252,24 +268,25 @@ export default function SideList({
                     <span className="num">{r.code}</span>
                     <span className={`num ${cls(r.changePct)}`}>{fmtPct(r.changePct)}</span>
                   </div>
+                  {/* 定位基准放在内容层：行本身是绝对定位的，不能再改它的 position */}
+                  {onRemove && (
+                    <button
+                      className={`side-del${pending ? ' pending' : ''}`}
+                      title={pending ? '再点一次确认从自选移除' : '从自选移除'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!pending) {
+                          setPendingDel(r.symbol);
+                          return;
+                        }
+                        setPendingDel('');
+                        onRemove(r.symbol);
+                      }}
+                    >
+                      {pending ? '确认' : '✕'}
+                    </button>
+                  )}
                 </div>
-                {onRemove && (
-                  <button
-                    className={`side-del${pending ? ' pending' : ''}`}
-                    title={pending ? '再点一次确认从自选移除' : '从自选移除'}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!pending) {
-                        setPendingDel(r.symbol);
-                        return;
-                      }
-                      setPendingDel('');
-                      onRemove(r.symbol);
-                    }}
-                  >
-                    {pending ? '确认' : '✕'}
-                  </button>
-                )}
               </div>
             );
           })}
