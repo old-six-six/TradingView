@@ -29,6 +29,8 @@ import PosMenu from './PosMenu';
 import BoardMenu from './BoardMenu';
 import { watchEntryFolder } from '../sideOrder';
 import { BARS_ON_SCREEN, PERIODS } from '../chartPresets';
+import { minutePriceFormat } from '../minuteAxis';
+import MinuteAxis, { MINUTE_AXIS_HEIGHT } from './MinuteAxis';
 import { MARKET_POS_LABEL } from './MarketPage';
 
 const SUB_INDICATORS = ['MACD', 'KDJ', 'RSI', 'CYHT'] as const;
@@ -229,6 +231,8 @@ export default function ChartPane() {
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any>[]>([]);
+  /** 分时自绘时间轴占用的底部高度，0 表示当前周期不用留 */
+  const minutePadRef = useRef(0);
   /** 主图 K 线序列，键盘左右键定位光标时要知道价格轴挂在谁身上 */
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   /** 光标当前所在的 K 线索引，null = 还没定位过 */
@@ -552,7 +556,7 @@ export default function ChartPane() {
         const keep = xhairOn.current ? xhairRef.current : null;
         chart.applyOptions({
           width: hostRef.current.clientWidth,
-          height: hostRef.current.clientHeight,
+          height: hostRef.current.clientHeight - minutePadRef.current,
         });
         layoutPanes();
         requestAnimationFrame(measurePaneTops);
@@ -895,9 +899,20 @@ export default function ChartPane() {
       timeScale: {
         timeVisible: period === 'minute' || isIntraday,
         secondsVisible: false,
+        // 分时的时间轴自绘（见 MinuteAxis）：库在午休断点会丢刻度
+        visible: period !== 'minute',
       },
       rightPriceScale: { scaleMargins: { top: 0.06, bottom: 0.06 } },
     });
+
+    // 分时要给自绘时间轴留出底部空间，图表本体相应减高
+    minutePadRef.current = period === 'minute' ? MINUTE_AXIS_HEIGHT : 0;
+    if (hostRef.current) {
+      chart.applyOptions({
+        width: hostRef.current.clientWidth,
+        height: hostRef.current.clientHeight - minutePadRef.current,
+      });
+    }
 
     if (period === 'minute' && minute) {
       renderMinute(chart, minute);
@@ -1062,7 +1077,8 @@ export default function ChartPane() {
       topColor: isUp ? 'rgba(217,48,38,0.16)' : 'rgba(18,137,79,0.16)',
       bottomColor: 'rgba(255,255,255,0)',
       lineWidth: 1,
-      priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+      // 同花顺口径：右侧轴「价格 + 涨跌幅」两列
+      priceFormat: minutePriceFormat(data.prevClose),
       priceLineVisible: false,
       lastValueVisible: true,
       autoscaleInfoProvider: symmetricScale,
@@ -1077,7 +1093,8 @@ export default function ChartPane() {
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
-        title: '昨收',
+        // 同花顺的昨收就是一根灰虚线，轴上是 0.00% 那一行；带 title 会压住轴标签
+        title: '',
       });
     }
 
@@ -1760,6 +1777,9 @@ export default function ChartPane() {
       </div>
 
       <div className="chart-host" ref={hostRef}>
+        {isMinute && (
+          <MinuteAxis chart={chartRef.current} times={minute?.points.map((p) => p.time) ?? []} />
+        )}
         {loading && <div className="chart-loading">加载中…</div>}
         {!loading && error && <div className="chart-loading">加载失败：{error}</div>}
         {!loading && !error && !bars.length && !minute && <div className="chart-loading">暂无数据</div>}

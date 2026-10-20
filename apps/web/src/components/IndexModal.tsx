@@ -12,6 +12,8 @@ import {
 import { api, type Bar, type MinutePoint, type Quote } from '../api';
 import { gotoMarketFromIndex } from '../nav';
 import { isIntraday, PERIODS } from '../chartPresets';
+import { minutePriceFormat } from '../minuteAxis';
+import MinuteAxis, { MINUTE_AXIS_HEIGHT } from './MinuteAxis';
 import type { IndexRef } from '../store';
 import { cls, fmtNum, fmtPct } from '../fmt';
 
@@ -32,6 +34,20 @@ const VOLUME_FORMAT = {
   },
   minMove: 1,
 };
+
+/** 分钟 K 线 / 日线的时间轴：按跨度分层显示年、月、日、时分 */
+function indexTickFormatter(time: unknown, type?: number): string {
+  if (typeof time !== 'number') return '';
+  const d = new Date(time * 1000);
+  const mo = d.getUTCMonth() + 1;
+  const da = d.getUTCDate();
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mi = String(d.getUTCMinutes()).padStart(2, '0');
+  if (type === 0) return `${d.getUTCFullYear()}`;
+  if (type === 1) return `${mo}月`;
+  if (type === 2) return `${mo}/${da}`;
+  return `${hh}:${mi}`;
+}
 
 function tsOf(dateStr: string): number {
   const m = (dateStr ?? '').trim();
@@ -64,6 +80,8 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any>[]>([]);
+  /** 分时自绘时间轴占用的底部高度 */
+  const minutePadRef = useRef(0);
 
   // Esc 关闭。忽略「本组件刚挂载前」就发生的那一下 Esc：
   // 从列表页 Esc 退回弹窗时，是同一个键盘事件把弹窗重新打开的，不能被它顺手再关掉
@@ -152,18 +170,7 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
         secondsVisible: false,
         fixLeftEdge: true,
         fixRightEdge: true,
-        tickMarkFormatter: (time: any, type?: number) => {
-          if (typeof time !== 'number') return '';
-          const d = new Date(time * 1000);
-          const mo = d.getUTCMonth() + 1;
-          const da = d.getUTCDate();
-          const hh = String(d.getUTCHours()).padStart(2, '0');
-          const mi = String(d.getUTCMinutes()).padStart(2, '0');
-          if (type === 0) return `${d.getUTCFullYear()}`;
-          if (type === 1) return `${mo}月`;
-          if (type === 2) return `${mo}/${da}`;
-          return `${hh}:${mi}`;
-        },
+        tickMarkFormatter: indexTickFormatter,
       },
       crosshair: {
         mode: 1,
@@ -176,7 +183,7 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
       if (hostRef.current) {
         chart.applyOptions({
           width: hostRef.current.clientWidth,
-          height: hostRef.current.clientHeight,
+          height: hostRef.current.clientHeight - minutePadRef.current,
         });
       }
     });
@@ -202,8 +209,21 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
     }
     seriesRef.current = [];
 
-    // 时间轴：分钟级别显示时分，日线以上只显示日期
-    chart.applyOptions({ timeScale: { timeVisible: isIntraday(period) } });
+    // 时间轴：分钟级别显示时分，日线以上只显示日期；分时的时间轴由 MinuteAxis 自绘
+    chart.applyOptions({
+      timeScale: {
+        timeVisible: isIntraday(period),
+        visible: period !== 'minute',
+        tickMarkFormatter: indexTickFormatter,
+      },
+    });
+    minutePadRef.current = period === 'minute' ? MINUTE_AXIS_HEIGHT : 0;
+    if (hostRef.current) {
+      chart.applyOptions({
+        width: hostRef.current.clientWidth,
+        height: hostRef.current.clientHeight - minutePadRef.current,
+      });
+    }
 
     if (period === 'minute') {
       if (!points.length) return;
@@ -216,7 +236,7 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
         topColor: up ? 'rgba(217,48,38,0.16)' : 'rgba(18,137,79,0.16)',
         bottomColor: 'rgba(255,255,255,0)',
         lineWidth: 1,
-        priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+        priceFormat: minutePriceFormat(prevClose),
         priceLineVisible: false,
         lastValueVisible: true,
       });
@@ -230,7 +250,7 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
-          title: '昨收',
+          title: '',
         });
       }
 
@@ -359,6 +379,9 @@ export default function IndexModal({ info, onClose }: { info: IndexRef; onClose:
           )}
           {!loading && !error && period !== 'minute' && !bars.length && (
             <div className="bm-chart-loading">暂无数据</div>
+          )}
+          {period === 'minute' && points.length > 0 && (
+            <MinuteAxis chart={chartRef.current} times={points.map((p) => p.time)} />
           )}
         </div>
       </div>
