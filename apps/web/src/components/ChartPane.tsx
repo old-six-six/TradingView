@@ -211,6 +211,54 @@ function minuteTs(date: string, hhmm: string): number {
 /** 分时的视野：整日 242 个槽，从头铺到尾，右侧不留「未来」 */
 const FULL_DAY_RANGE = { from: -0.5, to: SESSION_TIMES.length - 0.5 };
 
+/**
+ * 分时刷新间隔。数据源本身就是 1 分钟粒度（同一分钟内的那个点会持续变动），
+ * 5 秒足够跟上同花顺的手感，又不会把接口打太狠。
+ */
+const MINUTE_REFRESH_MS = 5000;
+
+/**
+ * 盘中判断，口径与 server/service/poller.ts 的 isTradingTime 一致
+ *（含集合竞价与收盘后 5 分钟）。非交易时段不轮询：/api/minute 没有缓存，
+ * 每次都真打腾讯，休市时刷就是白耗请求。
+ */
+function isTradingNow(): boolean {
+  const d = new Date();
+  const day = d.getDay();
+  if (day === 0 || day === 6) return false;
+  const t = d.getHours() * 60 + d.getMinutes();
+  return (t >= 9 * 60 + 15 && t <= 11 * 60 + 35) || (t >= 12 * 60 + 58 && t <= 15 * 60 + 5);
+}
+
+/**
+ * 两次分时数据是否等价。只比点数与最后一点：腾讯是整段返回，
+ * 同一分钟内最后一点的价格/量/额会持续变动，这足以覆盖盘中的每一次推进。
+ * 等价就不 setState，免得 5 秒一次做无谓重绘。
+ */
+function sameMinute(
+  a: { date: string; points: MinutePoint[] } | null,
+  date: string,
+  points: MinutePoint[],
+): boolean {
+  if (!a || a.date !== date || a.points.length !== points.length) return false;
+  const x = a.points[a.points.length - 1];
+  const y = points[points.length - 1];
+  if (!x || !y) return !x && !y;
+  return x.time === y.time && x.price === y.price && x.volume === y.volume && x.amount === y.amount;
+}
+
+/**
+ * 分时四条序列的句柄：建一次，之后每轮只灌数据。
+ * 盘中刷新若走 clearSeries 重建，整条曲线会闪一下，十字光标也丢。
+ */
+interface MinuteSeriesSet {
+  /** `${symbol}|${date}`：换票或跨日才重建 */
+  key: string;
+  area: ISeriesApi<'Area'>;
+  avg: ISeriesApi<'Line'>;
+  vol: ISeriesApi<'Histogram'>;
+}
+
 /** 时间轴刻度：按跨度自动分层，分钟级别显示 HH:MM，跨日显示 MM/DD */
 function makeTickFormatter() {
   return (time: any, tickMarkType?: number): string => {
@@ -240,6 +288,8 @@ export default function ChartPane() {
   const minuteViewRef = useRef(false);
   /** 主图 K 线序列，键盘左右键定位光标时要知道价格轴挂在谁身上 */
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  /** 分时序列句柄：盘中每 5 秒刷新时只灌数据，不重建 */
+  const minuteSeriesRef = useRef<MinuteSeriesSet | null>(null);
   /** 光标当前所在的 K 线索引，null = 还没定位过 */
   const xhairRef = useRef<number | null>(null);
   /** 光标此刻是否显示在图上（鼠标移开后为 false，但索引留着好接着按方向键） */
@@ -825,6 +875,7 @@ export default function ChartPane() {
     }
     seriesRef.current = [];
     candleRef.current = null;
+    minuteSeriesRef.current = null;
   }
 
   useEffect(() => {
@@ -886,6 +937,39 @@ export default function ChartPane() {
     };
   }, [selected, period]);
 
+  /**
+   * 分时盘中刷新。
+   *
+   * 之前分时只在切票 / 切周期时拉一次 /api/minute，之后再也不请求，
+   * 所以打开分时后曲线就冻在那一刻——这就是「分时曲线不更新」的根因。
+   * 这里每 5 秒补一次；setMinute 触发渲染 effect 的复用分支，只 setData
+   * 不重建序列，所以不闪、不丢光标、视野也稳在整日。
+   *
+   * 非交易时段直接跳过：接口没有缓存，每次都真打腾讯，休市刷就是白耗。
+   */
+  useEffect(() => {
+    if (period !== 'minute' || !selected) return;
+    let alive = true;
+    const tick = async () => {
+      if (!isTradingNow()) return;
+      try {
+        const r = await api.minute(selected);
+        if (!alive) return;
+        // 同花顺口径：分时只画到 15:00，尾部盘后零星成交不入图
+        const points = r.points.filter((p) => p.time <= '15:00');
+        // 数据没动就不 setState，免得每 5 秒白跑一次重绘
+        setMinute((prev) => (sameMinute(prev, r.date, points) ? prev : { ...r, points }));
+      } catch {
+        /* 单次失败忽略，下一轮再试 */
+      }
+    };
+    const id = window.setInterval(tick, MINUTE_REFRESH_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [selected, period]);
+
   useEffect(() => {
     barsRef.current = bars;
     indRef.current = ind;
@@ -894,6 +978,19 @@ export default function ChartPane() {
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+    /**
+     * 盘中分时刷新：同一只票、同一天、序列还在，就只灌数据。
+     * 走下面 clearSeries 重建的路径会整条曲线闪一下，十字光标也丢，
+     * 每 5 秒闪一次没法看。换票/跨日/切周期时 key 对不上，自然落到重建路径。
+     */
+    const minuteKey = period === 'minute' && minute ? `${selected}|${minute.date}` : '';
+    const live = minuteSeriesRef.current;
+    if (minute && minuteKey && live && live.key === minuteKey) {
+      fillMinute(live, minute);
+      viewRef.current.key = `${selected}|${period}`;
+      viewRef.current.bars = bars;
+      return;
+    }
     // 必须在清空序列之前取：setData 期间图表会回调可见范围，把记录值冲掉
     const viewKey = `${selected}|${period}`;
     // 只有「同一只票、同一周期、同一份数据」的重绘才还原视野
@@ -1055,60 +1152,26 @@ export default function ChartPane() {
     };
   }, [minute, hoverIdx]);
 
+  /**
+   * 建分时序列：只在换票 / 跨日 / 从别的周期切进来时做一次。
+   * 盘中刷新走 fillMinute，只灌数据不重建——每 5 秒重建一次会整条曲线闪。
+   */
   function renderMinute(
     chart: IChartApi,
     data: { date: string; prevClose: number; points: MinutePoint[] },
   ) {
-    // 横轴按整个交易日铺满：有数据的槽填值，还没走到的槽留白（whitespace），
-    // 这样早盘十点也不会把 9:30→10:30 拉成满屏
-    const byTime = new Map(data.points.map((p) => [p.time, p]));
     const at = (t: string) => minuteTs(data.date, t) as UTCTimestamp;
 
-    const priceData = SESSION_TIMES.map((t) => {
-      const p = byTime.get(t);
-      return p ? { time: at(t), value: p.price } : { time: at(t) };
-    });
-
-    let cumVol = 0;
-    let cumAmt = 0;
-    const avgData = SESSION_TIMES.map((t) => {
-      const p = byTime.get(t);
-      if (!p) return { time: at(t) };
-      cumVol += p.volume;
-      cumAmt += p.amount;
-      return {
-        time: at(t),
-        value: cumVol > 0 ? cumAmt / (cumVol * 100) : p.price,
-      };
-    });
-
-    const first = data.points[0]?.price ?? data.prevClose;
-    const last = data.points[data.points.length - 1]?.price ?? first;
-    const isUp = last >= data.prevClose;
-    const mainColor = isUp ? UP : DOWN;
-
-    // 同花顺口径：分时价格轴以昨收为中轴、上下等幅，避免被单边行情撑歪
-    const hi = Math.max(...data.points.map((p) => p.price), data.prevClose || 0);
-    const lo = Math.min(...data.points.map((p) => p.price), data.prevClose || Infinity);
-    const span = Math.max(hi - (data.prevClose || hi), (data.prevClose || lo) - lo);
-    const pad = (span > 0 ? span : (hi - lo) * 0.5 || 0.1) * 1.08;
-    const symmetricScale = () =>
-      data.prevClose > 0
-        ? { priceRange: { minValue: data.prevClose - pad, maxValue: data.prevClose + pad } }
-        : null;
-
     const area = chart.addSeries(AreaSeries, {
-      lineColor: mainColor,
-      topColor: isUp ? 'rgba(217,48,38,0.16)' : 'rgba(18,137,79,0.16)',
+      lineColor: UP,
+      topColor: 'rgba(217,48,38,0.16)',
       bottomColor: 'rgba(255,255,255,0)',
       lineWidth: 1,
       // 同花顺口径：右侧轴「价格 + 涨跌幅」两列
       priceFormat: minutePriceFormat(data.prevClose),
       priceLineVisible: false,
       lastValueVisible: true,
-      autoscaleInfoProvider: symmetricScale,
     });
-    area.setData(priceData);
     seriesRef.current.push(area);
 
     if (data.prevClose) {
@@ -1134,7 +1197,6 @@ export default function ChartPane() {
       },
       0,
     );
-    avg.setData(avgData);
     seriesRef.current.push(avg);
 
     // 收尾的 whitespace 会被库裁掉（它没有值，画不出东西），时间轴的数据范围
@@ -1165,7 +1227,72 @@ export default function ChartPane() {
       { priceFormat: VOLUME_FORMAT, priceLineVisible: false, lastValueVisible: false },
       1,
     );
-    vol.setData(
+    seriesRef.current.push(vol);
+
+    chart.applyOptions({
+      timeScale: { timeVisible: true, secondsVisible: false },
+      rightPriceScale: { scaleMargins: { top: 0.02, bottom: 0.02 } },
+    });
+
+    const set: MinuteSeriesSet = { key: `${selected}|${data.date}`, area, avg, vol };
+    minuteSeriesRef.current = set;
+    fillMinute(set, data);
+  }
+
+  /**
+   * 把一份分时数据灌进已有的序列。盘中每 5 秒调一次，所以只 setData + 改样式，
+   * 不碰窗格结构、不碰视野（横轴固定整日，数据范围由 stub 撑住）。
+   */
+  function fillMinute(
+    set: MinuteSeriesSet,
+    data: { date: string; prevClose: number; points: MinutePoint[] },
+  ) {
+    if (!data.points.length) return;
+    // 横轴按整个交易日铺满：有数据的槽填值，还没走到的槽留白（whitespace），
+    // 这样早盘十点也不会把 9:30→10:30 拉成满屏
+    const byTime = new Map(data.points.map((p) => [p.time, p]));
+    const at = (t: string) => minuteTs(data.date, t) as UTCTimestamp;
+
+    const priceData = SESSION_TIMES.map((t) => {
+      const p = byTime.get(t);
+      return p ? { time: at(t), value: p.price } : { time: at(t) };
+    });
+
+    let cumVol = 0;
+    let cumAmt = 0;
+    const avgData = SESSION_TIMES.map((t) => {
+      const p = byTime.get(t);
+      if (!p) return { time: at(t) };
+      cumVol += p.volume;
+      cumAmt += p.amount;
+      return {
+        time: at(t),
+        value: cumVol > 0 ? cumAmt / (cumVol * 100) : p.price,
+      };
+    });
+
+    const last = data.points[data.points.length - 1].price;
+    const isUp = last >= data.prevClose;
+
+    // 同花顺口径：分时价格轴以昨收为中轴、上下等幅，避免被单边行情撑歪。
+    // 创新高/新低会改 pad，所以每轮都得重新交给 area —— setData 时才会重算自适应
+    const hi = Math.max(...data.points.map((p) => p.price), data.prevClose || 0);
+    const lo = Math.min(...data.points.map((p) => p.price), data.prevClose || Infinity);
+    const span = Math.max(hi - (data.prevClose || hi), (data.prevClose || lo) - lo);
+    const pad = (span > 0 ? span : (hi - lo) * 0.5 || 0.1) * 1.08;
+    const scale =
+      data.prevClose > 0
+        ? { priceRange: { minValue: data.prevClose - pad, maxValue: data.prevClose + pad } }
+        : null;
+
+    set.area.applyOptions({
+      lineColor: isUp ? UP : DOWN,
+      topColor: isUp ? 'rgba(217,48,38,0.16)' : 'rgba(18,137,79,0.16)',
+      autoscaleInfoProvider: () => scale,
+    });
+    set.area.setData(priceData);
+    set.avg.setData(avgData);
+    set.vol.setData(
       SESSION_TIMES.map((t) => {
         const p = byTime.get(t);
         if (!p) return { time: at(t) };
@@ -1176,17 +1303,11 @@ export default function ChartPane() {
         };
       }),
     );
-    seriesRef.current.push(vol);
 
     // 光标定位索引表（分时同样支持图例联动）
     const idxMap = new Map<number, number>();
     data.points.forEach((p, i) => idxMap.set(minuteTs(data.date, p.time), i));
     timeIdxRef.current = idxMap;
-
-    chart.applyOptions({
-      timeScale: { timeVisible: true, secondsVisible: false },
-      rightPriceScale: { scaleMargins: { top: 0.02, bottom: 0.02 } },
-    });
   }
 
   function renderKline(
