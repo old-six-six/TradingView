@@ -8,5 +8,7 @@ data/*.db-wal
 data/*.db-shm
 data/*.duckdb*
 .env
+# vite 启动时生成的临时配置副本，每次文件名都不同
+apps/web/vite.config.ts.timestamp-*.mjs
 # 调试用的截图/一次性脚本，不进版本库
 .preview/
